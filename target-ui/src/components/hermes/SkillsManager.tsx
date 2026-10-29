@@ -13,11 +13,13 @@ import {
   Save,
   Check,
   Package,
+  ExternalLink,
+  Code2,
 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Card, CardContent, CardHeader } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Switch } from "@/components/ui/switch";
 import {
   Dialog,
@@ -42,7 +44,8 @@ export function SkillsManager({ className }: SkillsManagerProps) {
   const [editorOpen, setEditorOpen] = useState(false);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [filterProvenance, setFilterProvenance] = useState<string>("all");
+  const [activeTab, setActiveTab] = useState<"all" | "skills" | "plugins">("all");
+  const [selectedCategory, setSelectedCategory] = useState<string>("all");
   const [savedSuccess, setSavedSuccess] = useState(false);
 
   const loadSkills = async () => {
@@ -86,10 +89,15 @@ export function SkillsManager({ className }: SkillsManagerProps) {
     setSaving(false);
     setSavedSuccess(false);
     try {
-      const client = getGatewayClient();
-      const res = await client.readSkill(skill.name);
-      setEditorContent(res.content || "");
-      setEditorPath(res.path || "");
+      const res = await fetch(`/api/hermes/skills/content?name=${encodeURIComponent(skill.name)}`);
+      if (res.ok) {
+        const data = await res.json();
+        setEditorContent(data.content || "");
+        setEditorPath(data.path || "");
+      } else {
+        setEditorContent(skill.content || `# ${skill.name}\n\n${skill.description || ""}`);
+        setEditorPath(skill.path || "");
+      }
       setEditorOpen(true);
     } catch (e) {
       console.error("Failed to read skill content:", e);
@@ -102,11 +110,16 @@ export function SkillsManager({ className }: SkillsManagerProps) {
     if (!selectedSkill) return;
     setSaving(true);
     try {
-      const client = getGatewayClient();
-      await client.writeSkill(selectedSkill.name, editorContent);
-      setSavedSuccess(true);
-      setTimeout(() => setSavedSuccess(false), 2000);
-      await loadSkills();
+      const res = await fetch("/api/hermes/skills/content", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: selectedSkill.name, content: editorContent }),
+      });
+      if (res.ok) {
+        setSavedSuccess(true);
+        setTimeout(() => setSavedSuccess(false), 2000);
+        await loadSkills();
+      }
     } catch (e) {
       console.error("Failed to save skill:", e);
     } finally {
@@ -114,233 +127,271 @@ export function SkillsManager({ className }: SkillsManagerProps) {
     }
   };
 
-  const getProvenanceBadge = (prov?: string) => {
-    switch (prov) {
-      case "bundled":
-        return (
-          <Badge variant="secondary" className="text-[10px] bg-blue-500/10 text-blue-400 border-blue-500/20">
-            Bundled
-          </Badge>
-        );
-      case "hub":
-        return (
-          <Badge variant="secondary" className="text-[10px] bg-purple-500/10 text-purple-400 border-purple-500/20">
-            Hub
-          </Badge>
-        );
-      case "agent":
-        return (
-          <Badge variant="secondary" className="text-[10px] bg-emerald-500/10 text-emerald-400 border-emerald-500/20">
-            Learned
-          </Badge>
-        );
-      case "external":
-        return (
-          <Badge variant="secondary" className="text-[10px] bg-amber-500/10 text-amber-400 border-amber-500/20">
-            External
-          </Badge>
-        );
-      default:
-        return (
-          <Badge variant="outline" className="text-[10px] text-muted-foreground">
-            Custom
-          </Badge>
-        );
-    }
-  };
+  // Derive unique categories
+  const categories = ["all", "software-development", "research", "devops", "productivity", "apple", "tools", "media", "memory"];
 
   const filteredSkills = skills.filter((s) => {
     const q = search.toLowerCase();
     const matchSearch =
-      s.name.toLowerCase().includes(q) || (s.description || "").toLowerCase().includes(q);
-    const matchProv =
-      filterProvenance === "all" || s.provenance === filterProvenance;
-    return matchSearch && matchProv;
+      s.name.toLowerCase().includes(q) ||
+      (s.title || "").toLowerCase().includes(q) ||
+      (s.description || "").toLowerCase().includes(q) ||
+      (s.category || "").toLowerCase().includes(q);
+
+    const matchTab =
+      activeTab === "all" ||
+      (activeTab === "skills" && s.type === "skill") ||
+      (activeTab === "plugins" && s.type === "plugin");
+
+    const matchCategory =
+      selectedCategory === "all" ||
+      (s.category && s.category.toLowerCase().includes(selectedCategory.toLowerCase()));
+
+    return matchSearch && matchTab && matchCategory;
   });
 
   return (
     <div className={cn("flex flex-col h-full bg-background/50", className)}>
       {/* Top Header */}
-      <div className="p-4 border-b border-border/60 space-y-3">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <Wrench className="size-5 text-primary" />
-            <h2 className="font-semibold text-sm tracking-tight text-foreground">
-              Hermes Skills Library
-            </h2>
-            <Badge variant="outline" className="text-[11px] font-mono">
-              {skills.length} available
-            </Badge>
+      <div className="p-4 md:p-6 border-b border-border/60 space-y-4">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div className="flex items-center gap-3">
+            <div className="size-9 rounded-xl bg-primary/10 border border-primary/20 flex items-center justify-center text-primary">
+              <Wrench className="size-5" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <h1 className="font-bold text-lg tracking-tight text-foreground">
+                  Official Hermes Skills & Plugins Catalog
+                </h1>
+                <Badge variant="outline" className="text-[11px] font-mono text-primary border-primary/30">
+                  {skills.length} Loaded
+                </Badge>
+              </div>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                Browse official Nous Research agent capabilities, tools, and community plugins.
+              </p>
+            </div>
           </div>
-          <div className="flex items-center gap-1.5">
+
+          <div className="flex items-center gap-2">
             <Button
-              variant="ghost"
-              size="icon"
-              className="size-8"
+              variant="outline"
+              size="sm"
+              className="h-8 gap-1.5 text-xs"
               onClick={loadSkills}
-              disabled={loading}
-              title="Refresh skills"
             >
               <RefreshCw className={cn("size-3.5", loading && "animate-spin")} />
+              Sync Catalog
             </Button>
           </div>
         </div>
 
-        {/* Filter bar */}
-        <div className="flex items-center gap-2">
-          <div className="relative flex-1">
-            <Search className="absolute left-2.5 top-2.5 size-3.5 text-muted-foreground" />
+        {/* Tab & Filter Bar */}
+        <div className="flex flex-col sm:flex-row gap-3 items-stretch sm:items-center justify-between">
+          <div className="flex rounded-lg bg-muted/60 p-0.5 border border-border/40 text-xs font-medium">
+            <button
+              onClick={() => setActiveTab("all")}
+              className={cn(
+                "px-3 py-1 rounded-md transition-all",
+                activeTab === "all" ? "bg-background text-foreground shadow-sm" : "text-muted-foreground"
+              )}
+            >
+              All ({skills.length})
+            </button>
+            <button
+              onClick={() => setActiveTab("skills")}
+              className={cn(
+                "px-3 py-1 rounded-md transition-all flex items-center gap-1",
+                activeTab === "skills" ? "bg-background text-foreground shadow-sm" : "text-muted-foreground"
+              )}
+            >
+              <Code2 className="size-3 text-cyan-400" />
+              Official Skills ({skills.filter((s) => s.type === "skill").length})
+            </button>
+            <button
+              onClick={() => setActiveTab("plugins")}
+              className={cn(
+                "px-3 py-1 rounded-md transition-all flex items-center gap-1",
+                activeTab === "plugins" ? "bg-background text-foreground shadow-sm" : "text-muted-foreground"
+              )}
+            >
+              <Package className="size-3 text-purple-400" />
+              Official Plugins ({skills.filter((s) => s.type === "plugin").length})
+            </button>
+          </div>
+
+          {/* Search Box */}
+          <div className="relative flex-1 max-w-sm">
+            <Search className="size-3.5 absolute left-3 top-2.5 text-muted-foreground" />
             <Input
-              placeholder="Search skill name or description..."
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              className="pl-8 h-8 text-xs bg-background/70"
+              placeholder="Search by skill name, tool, or description..."
+              className="h-8 pl-8 text-xs bg-background/60 border-border/50 font-mono"
             />
           </div>
-          <div className="flex items-center gap-1 text-xs">
-            {["all", "bundled", "hub", "agent"].map((prov) => (
-              <Button
-                key={prov}
-                variant={filterProvenance === prov ? "secondary" : "ghost"}
-                size="sm"
-                className="h-8 px-2 text-[11px] capitalize"
-                onClick={() => setFilterProvenance(prov)}
-              >
-                {prov}
-              </Button>
-            ))}
-          </div>
+        </div>
+
+        {/* Category Pills */}
+        <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar py-1 text-xs">
+          <span className="text-[11px] font-mono text-muted-foreground mr-1">Categories:</span>
+          {categories.map((cat) => (
+            <button
+              key={cat}
+              onClick={() => setSelectedCategory(cat)}
+              className={cn(
+                "px-2.5 py-0.5 rounded-full text-[11px] font-mono capitalize transition-all whitespace-nowrap",
+                selectedCategory === cat
+                  ? "bg-primary text-primary-foreground font-semibold"
+                  : "bg-muted/40 text-muted-foreground hover:text-foreground hover:bg-muted/70"
+              )}
+            >
+              {cat.replace("-", " ")}
+            </button>
+          ))}
         </div>
       </div>
 
-      {/* Grid of Skills */}
-      <div className="flex-1 overflow-y-auto p-4 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-        {loading && skills.length === 0 ? (
-          <div className="col-span-full flex flex-col items-center justify-center h-48 text-muted-foreground text-xs gap-2">
-            <RefreshCw className="size-4 animate-spin text-primary" />
-            <span>Scanning SKILL.md library...</span>
+      {/* Grid of Skill Cards */}
+      <div className="flex-1 overflow-y-auto p-4 md:p-6">
+        {loading ? (
+          <div className="h-64 flex flex-col items-center justify-center text-muted-foreground text-xs font-mono space-y-2">
+            <RefreshCw className="size-6 animate-spin text-primary" />
+            <span>Scanning Hermes skills and plugin catalog...</span>
           </div>
         ) : filteredSkills.length === 0 ? (
-          <div className="col-span-full flex flex-col items-center justify-center h-48 text-center text-muted-foreground text-xs p-4 border border-dashed rounded-xl">
-            <Package className="size-6 mb-2 opacity-50" />
-            <p className="font-medium text-foreground">No matching skills found</p>
-            <p className="text-[11px] mt-1 text-muted-foreground">
-              Try adjusting your search terms or filter tags.
-            </p>
+          <div className="h-64 flex flex-col items-center justify-center text-muted-foreground text-xs space-y-2">
+            <Package className="size-10 stroke-[1.2] text-zinc-600" />
+            <p>No skills or plugins found matching your filter.</p>
           </div>
         ) : (
-          filteredSkills.map((skill) => (
-            <Card
-              key={skill.name}
-              onClick={() => handleOpenEditor(skill)}
-              className={cn(
-                "cursor-pointer transition-all border rounded-xl hover:border-primary/50 group flex flex-col justify-between overflow-hidden",
-                skill.enabled
-                  ? "border-border/60 hover:bg-muted/30"
-                  : "border-border/30 opacity-70 bg-muted/10"
-              )}
-            >
-              <CardHeader className="p-3.5 pb-2 space-y-1.5">
-                <div className="flex items-center justify-between gap-2">
-                  <div className="flex items-center gap-1.5 min-w-0">
-                    <span className="font-mono font-medium text-xs text-foreground truncate group-hover:text-primary transition-colors">
-                      {skill.name}
-                    </span>
-                    {getProvenanceBadge(skill.provenance)}
-                  </div>
-                  <div
-                    onClick={(e) => handleToggle(skill, e)}
-                    className="flex items-center"
-                    title={skill.enabled ? "Disable skill" : "Enable skill"}
-                  >
-                    <Switch
-                      checked={skill.enabled}
-                      className="data-[state=checked]:bg-primary scale-75"
-                    />
-                  </div>
-                </div>
-              </CardHeader>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3.5">
+            {filteredSkills.map((skill) => {
+              const isSkill = skill.type === "skill";
+              return (
+                <Card
+                  key={skill.name}
+                  onClick={() => handleOpenEditor(skill)}
+                  className="group relative border-border/50 bg-card/30 hover:bg-card/70 hover:border-primary/40 transition-all cursor-pointer rounded-2xl overflow-hidden flex flex-col justify-between"
+                >
+                  <CardContent className="p-4 space-y-2.5">
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="flex items-center gap-2 truncate">
+                        <div
+                          className={cn(
+                            "size-7 rounded-lg flex items-center justify-center shrink-0 border",
+                            isSkill
+                              ? "bg-cyan-500/10 text-cyan-400 border-cyan-500/20"
+                              : "bg-purple-500/10 text-purple-400 border-purple-500/20"
+                          )}
+                        >
+                          {isSkill ? <Code2 className="size-4" /> : <Package className="size-4" />}
+                        </div>
+                        <div className="truncate">
+                          <h3 className="font-semibold text-xs text-foreground truncate group-hover:text-primary transition-colors">
+                            {skill.title || skill.name}
+                          </h3>
+                          <span className="text-[10px] font-mono text-muted-foreground truncate block">
+                            {skill.name}
+                          </span>
+                        </div>
+                      </div>
 
-              <CardContent className="p-3.5 pt-0 space-y-2">
-                <p className="text-[11px] text-muted-foreground line-clamp-2 leading-relaxed">
-                  {skill.description || "No description provided in SKILL.md metadata."}
-                </p>
+                      <div className="flex items-center gap-1.5 shrink-0" onClick={(e) => e.stopPropagation()}>
+                        <Switch
+                          checked={skill.enabled}
+                          onCheckedChange={() => handleToggle(skill, {} as any)}
+                          className="scale-75 data-[state=checked]:bg-primary"
+                        />
+                      </div>
+                    </div>
 
-                <div className="flex items-center justify-between text-[10px] text-zinc-500 pt-2 border-t border-border/30">
-                  <span className="font-mono flex items-center gap-1">
-                    <FileCode className="size-3" />
-                    SKILL.md
-                  </span>
-                  <span className="opacity-0 group-hover:opacity-100 text-primary transition-opacity flex items-center gap-0.5">
-                    View & Edit ↵
-                  </span>
-                </div>
-              </CardContent>
-            </Card>
-          ))
+                    <p className="text-xs text-muted-foreground line-clamp-2 leading-relaxed">
+                      {skill.description || "Official Hermes Agent capability."}
+                    </p>
+
+                    <div className="flex items-center justify-between pt-1 border-t border-border/30 text-[10px] font-mono text-zinc-500">
+                      <Badge variant="outline" className="text-[9px] px-1.5 py-0 uppercase">
+                        {skill.category || "tools"}
+                      </Badge>
+                      <span className="truncate max-w-[120px]">{skill.author || "Nous Research"}</span>
+                    </div>
+                  </CardContent>
+                </Card>
+              );
+            })}
+          </div>
         )}
       </div>
 
-      {/* SKILL.md Editor Dialog */}
+      {/* Detail / Editor Dialog */}
       <Dialog open={editorOpen} onOpenChange={setEditorOpen}>
-        <DialogContent className="max-w-3xl max-h-[85vh] flex flex-col p-0 overflow-hidden border-border/60">
-          <DialogHeader className="p-4 pb-2 border-b border-border/40 space-y-1">
-            <div className="flex items-center justify-between pr-6">
+        <DialogContent className="max-w-3xl max-h-[85vh] flex flex-col p-6 rounded-2xl bg-card border-border/70 shadow-2xl">
+          <DialogHeader>
+            <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
-                <FileCode className="size-4 text-primary" />
-                <DialogTitle className="font-mono text-sm">
-                  {selectedSkill?.name} / SKILL.md
+                <FileCode className="size-5 text-primary" />
+                <DialogTitle className="font-mono text-base">
+                  {selectedSkill?.title || selectedSkill?.name}
                 </DialogTitle>
-                {selectedSkill && getProvenanceBadge(selectedSkill.provenance)}
+                <Badge variant="outline" className="font-mono text-[10px] uppercase">
+                  {selectedSkill?.type || "skill"}
+                </Badge>
               </div>
+              {selectedSkill?.repo && (
+                <a
+                  href={selectedSkill.repo}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="text-xs font-mono text-primary flex items-center gap-1 hover:underline"
+                >
+                  <ExternalLink className="size-3" />
+                  GitHub Repo
+                </a>
+              )}
             </div>
-            {editorPath && (
-              <DialogDescription className="font-mono text-[11px] text-muted-foreground truncate">
-                {editorPath}
-              </DialogDescription>
-            )}
+            <DialogDescription className="text-xs text-muted-foreground truncate font-mono">
+              {editorPath || `skills/${selectedSkill?.name}/SKILL.md`}
+            </DialogDescription>
           </DialogHeader>
 
-          <div className="flex-1 p-4 overflow-hidden flex flex-col">
+          <div className="flex-1 min-h-[300px] overflow-hidden rounded-xl border border-border/50 bg-[#090d16] flex flex-col">
             <textarea
               value={editorContent}
               onChange={(e) => setEditorContent(e.target.value)}
-              className="flex-1 w-full min-h-[380px] p-3 rounded-lg border border-border/50 bg-black/60 font-mono text-xs leading-relaxed text-zinc-200 resize-none focus:outline-none focus:ring-1 focus:ring-primary"
-              spellCheck={false}
+              className="flex-1 w-full p-4 font-mono text-xs text-zinc-300 bg-transparent resize-none focus:outline-none leading-relaxed"
             />
           </div>
 
-          <DialogFooter className="p-3 px-4 border-t border-border/40 bg-muted/20 flex items-center justify-between sm:justify-between">
-            <div className="text-[11px] text-muted-foreground">
-              {editorContent.length} characters
-            </div>
+          <DialogFooter className="flex items-center justify-between sm:justify-between pt-2">
+            <span className="text-xs text-muted-foreground font-mono">
+              {savedSuccess ? (
+                <span className="text-emerald-400 flex items-center gap-1">
+                  <Check className="size-3.5" /> Saved to ~/.hermes/skills
+                </span>
+              ) : (
+                "Editable: Saved copies persist to ~/.hermes/skills/"
+              )}
+            </span>
 
             <div className="flex items-center gap-2">
               <Button
                 variant="outline"
                 size="sm"
                 onClick={() => setEditorOpen(false)}
-                className="h-8 text-xs"
+                className="text-xs"
               >
                 Close
               </Button>
               <Button
                 size="sm"
-                onClick={handleSaveSkill}
                 disabled={saving}
-                className="h-8 text-xs bg-primary hover:bg-primary/90 text-primary-foreground gap-1.5"
+                onClick={handleSaveSkill}
+                className="text-xs gap-1.5 bg-primary hover:bg-primary/90 text-primary-foreground"
               >
-                {savedSuccess ? (
-                  <>
-                    <Check className="size-3.5 text-emerald-400" />
-                    Saved!
-                  </>
-                ) : (
-                  <>
-                    <Save className="size-3.5" />
-                    {saving ? "Saving..." : "Save SKILL.md"}
-                  </>
-                )}
+                <Save className="size-3.5" />
+                {saving ? "Saving..." : "Save to User Skills"}
               </Button>
             </div>
           </DialogFooter>

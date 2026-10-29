@@ -58,9 +58,15 @@ export interface HermesSession {
 
 export interface HermesSkill {
   name: string;
+  title?: string;
   description?: string;
   enabled: boolean;
-  provenance?: "bundled" | "hub" | "external" | "agent";
+  provenance?: "bundled" | "hub" | "external" | "agent" | "official" | "community" | "custom";
+  category?: string;
+  type?: "skill" | "plugin";
+  author?: string;
+  tier?: string;
+  repo?: string;
   content?: string;
   path?: string;
 }
@@ -240,13 +246,14 @@ class GatewayClient {
           this.handleInboundFrame(event.data);
         };
 
-        ws.onerror = (error) => {
-          this.emit("error", error);
+        ws.onerror = (_event) => {
+          const errObj = new Error(`WebSocket connection failed to ${this.gatewayUrl}`);
+          this.emit("error", errObj);
           if (!isSettled) {
             isSettled = true;
             clearTimeout(connectTimeout);
             this.setState("error");
-            reject(error);
+            reject(errObj);
           }
         };
 

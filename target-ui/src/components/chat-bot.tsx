@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   ApprovalRequestPayload,
   ConnectionState,
@@ -28,16 +28,18 @@ import {
   EyeOff,
   Code2,
   Lock,
+  Layers,
+  X,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 import { VisualAnnotator, VisualAnnotation } from "@/components/chat/VisualAnnotator";
-import { IntentClarification } from "@/components/chat/IntentClarification";
 import { VariablePills } from "@/components/chat/VariablePills";
 import { ArtifactCanvas, ArtifactContent } from "@/components/chat/ArtifactCanvas";
 import { TerminalView } from "@/components/hermes/TerminalView";
 import { VoiceChatModal } from "@/components/chat/VoiceChatModal";
+import { WorkspaceDrawer } from "@/components/hermes/WorkspaceDrawer";
 
 interface ChatBotProps {
   threadId: string;
@@ -48,15 +50,15 @@ interface ChatBotProps {
 const SLASH_COMMANDS = [
   { command: "/help", desc: "Show Hermes OS command reference", action: "help" },
   { command: "/clear", desc: "Clear active conversation history", action: "clear" },
+  { command: "/workspace", desc: "Toggle Right-Sidebar Workspace Explorer", action: "toggle:workspace" },
+  { command: "/terminal", desc: "Toggle In-Browser TUI & Terminal", action: "terminal" },
   { command: "/model", desc: "Show or change active model", action: "model" },
-  { command: "/skills", desc: "Open Hermes Skills Manager", action: "nav:/skills" },
+  { command: "/skills", desc: "Open Official Hermes Skills Catalog", action: "nav:/skills" },
   { command: "/memory", desc: "Open MEMORY.md & USER.md editor", action: "nav:/memory" },
   { command: "/cron", desc: "Open Cron Schedule Manager", action: "nav:/cron" },
   { command: "/sessions", desc: "Search & resume SQLite sessions", action: "nav:/sessions" },
-  { command: "/workspace", desc: "Open Workspace Directory & Git Diff", action: "nav:/workspace" },
   { command: "/secrets", desc: "Open OpenClaw Secret Vault", action: "nav:/secrets" },
   { command: "/swarm", desc: "View Autonomous Swarm & Subagents", action: "nav:/swarm" },
-  { command: "/terminal", desc: "Toggle In-Browser TUI & Terminal", action: "terminal" },
   { command: "/doctor", desc: "Run gateway system diagnostics", action: "doctor" },
 ];
 
@@ -71,6 +73,9 @@ export default function ChatBot({ threadId, initialMessages = [] }: ChatBotProps
 
   // Layout View Mode: "chat" | "split" | "terminal"
   const [viewMode, setViewMode] = useState<"chat" | "split" | "terminal">("chat");
+
+  // Right-Sidebar Panel: "none" | "workspace" | "canvas"
+  const [rightPanel, setRightPanel] = useState<"none" | "workspace" | "canvas">("none");
 
   // Temporary / Incognito Chat Mode
   const [isTemporaryChat, setIsTemporaryChat] = useState<boolean>(false);
@@ -247,7 +252,7 @@ export default function ChatBot({ threadId, initialMessages = [] }: ChatBotProps
       setMessages((prev) => {
         const last = prev[prev.length - 1];
         if (last && last.role === "assistant") {
-          // Check if message contains code block to suggest opening in canvas
+          // If message contains code artifact, auto-open canvas
           if (last.content && (last.content.includes("```html") || last.content.includes("```tsx") || last.content.includes("```mermaid"))) {
             const match = last.content.match(/```(html|tsx|typescript|jsx|mermaid|svg)\n([\s\S]*?)```/);
             if (match) {
@@ -257,6 +262,7 @@ export default function ChatBot({ threadId, initialMessages = [] }: ChatBotProps
                 language: match[1],
                 code: match[2],
               });
+              setRightPanel("canvas");
             }
           }
           return [
@@ -268,9 +274,9 @@ export default function ChatBot({ threadId, initialMessages = [] }: ChatBotProps
       });
     });
 
-    // Connect
-    client.connect().catch((err) => {
-      console.warn("Gateway connection failed at mount:", err.message);
+    // Safe connect (catches non-Error event objects)
+    client.connect().catch((err: any) => {
+      console.warn("Gateway connection failed at mount:", err?.message || "Failed to reach gateway");
     });
 
     return () => {
@@ -297,6 +303,11 @@ export default function ChatBot({ threadId, initialMessages = [] }: ChatBotProps
         setInput("");
         return;
       }
+      if (cmd === "/workspace") {
+        setRightPanel((prev) => (prev === "workspace" ? "none" : "workspace"));
+        setInput("");
+        return;
+      }
       if (cmd === "/terminal") {
         setViewMode((m) => (m === "terminal" ? "chat" : "terminal"));
         setInput("");
@@ -316,10 +327,6 @@ export default function ChatBot({ threadId, initialMessages = [] }: ChatBotProps
       }
       if (cmd === "/sessions") {
         window.location.href = "/sessions";
-        return;
-      }
-      if (cmd === "/workspace") {
-        window.location.href = "/workspace";
         return;
       }
       if (cmd === "/secrets") {
@@ -358,7 +365,6 @@ export default function ChatBot({ threadId, initialMessages = [] }: ChatBotProps
 
     try {
       const client = getGatewayClient();
-      // If temporary chat mode, prepend incognito header
       const payloadText = isTemporaryChat
         ? `[SYSTEM: TEMPORARY_INCOGNITO_MODE=TRUE - Do not write to MEMORY.md, do not persist to SQLite session db, block scheduled cron jobs]\n\n${text}`
         : text;
@@ -374,7 +380,7 @@ export default function ChatBot({ threadId, initialMessages = [] }: ChatBotProps
             ...prev.slice(0, -1),
             {
               ...last,
-              content: `Error connecting to Hermes Gateway: ${err.message}`,
+              content: `Error connecting to Hermes Gateway: ${err?.message || "Connection refused"}`,
               status: "error",
             },
           ];
@@ -467,9 +473,9 @@ export default function ChatBot({ threadId, initialMessages = [] }: ChatBotProps
 
   const quickPrompts = [
     "Run `git status` in terminal",
-    "List enabled skills in Hermes OS",
+    "Inspect official Hermes skills catalog",
     "Show active memory profile status",
-    "Check scheduled cron jobs",
+    "Check scheduled cron jobs in ~/.hermes",
   ];
 
   const filteredSlashCommands = SLASH_COMMANDS.filter((sc) =>
@@ -477,17 +483,21 @@ export default function ChatBot({ threadId, initialMessages = [] }: ChatBotProps
   );
 
   return (
-    <div className="flex h-full w-full bg-background relative overflow-hidden">
+    <div className="flex h-full w-full bg-background relative overflow-hidden select-text">
+      {/* Ambient background glow for app vibe */}
+      <div className="absolute top-0 right-1/4 w-96 h-96 bg-primary/5 blur-3xl pointer-events-none rounded-full" />
+      <div className="absolute bottom-10 left-1/4 w-96 h-96 bg-cyan-500/5 blur-3xl pointer-events-none rounded-full" />
+
       {/* Main Chat / Split Left Pane */}
       <div
         className={cn(
-          "flex flex-col h-full overflow-hidden transition-all duration-200",
-          viewMode === "split" ? "w-1/2 border-r border-border/40" : "w-full",
+          "flex flex-col h-full overflow-hidden transition-all duration-200 relative z-10",
+          viewMode === "split" ? "w-1/2 border-r border-border/40" : "flex-1",
           viewMode === "terminal" && "hidden"
         )}
       >
         {/* Top Protocol Status Bar */}
-        <div className="px-4 py-2 border-b border-border/40 bg-card/30 backdrop-blur-sm flex items-center justify-between text-xs">
+        <div className="px-4 py-2 border-b border-border/40 bg-card/30 backdrop-blur-md flex items-center justify-between text-xs">
           <div className="flex items-center gap-2">
             <div className="flex items-center gap-1.5 font-mono text-[11px]">
               <span
@@ -499,33 +509,64 @@ export default function ChatBot({ threadId, initialMessages = [] }: ChatBotProps
                   connectionState === "closed" && "bg-zinc-500"
                 )}
               />
-              <span className="font-medium text-foreground">GlyteOS Hermes</span>
+              <span className="font-semibold text-foreground tracking-tight">GlyteOS Hermes</span>
             </div>
 
-            <Badge variant="outline" className="text-[10px] font-mono px-1.5 py-0">
+            <Badge variant="outline" className="text-[10px] font-mono px-1.5 py-0 border-border/40 text-zinc-300">
               {connectionState === "open" ? "CONNECTED" : connectionState.toUpperCase()}
             </Badge>
 
             {isTemporaryChat && (
               <Badge variant="outline" className="text-[10px] font-mono px-1.5 py-0 text-amber-400 border-amber-500/30 bg-amber-500/10 flex items-center gap-1">
                 <EyeOff className="size-2.5" />
-                Temporary Incognito
+                Incognito
               </Badge>
             )}
 
-            <span className="text-[10px] text-muted-foreground font-mono hidden md:inline truncate max-w-xs">
+            <span className="text-[10px] text-muted-foreground font-mono hidden lg:inline truncate max-w-xs">
               {gatewayUrl}
             </span>
           </div>
 
           <div className="flex items-center gap-2">
+            {/* Right Sidebar Controls: Workspace & Canvas */}
+            <Button
+              variant={rightPanel === "workspace" ? "default" : "outline"}
+              size="sm"
+              onClick={() => setRightPanel((prev) => (prev === "workspace" ? "none" : "workspace"))}
+              className={cn(
+                "h-7 px-2.5 text-[11px] font-mono gap-1.5 transition-all",
+                rightPanel === "workspace" ? "bg-primary text-primary-foreground shadow-sm" : "border-border/50 text-zinc-300 hover:text-foreground"
+              )}
+              title="Toggle Workspace Explorer on right sidebar"
+            >
+              <Layers className="size-3.5" />
+              <span>Workspace</span>
+            </Button>
+
+            {activeArtifact && (
+              <Button
+                variant={rightPanel === "canvas" ? "default" : "outline"}
+                size="sm"
+                onClick={() => setRightPanel((prev) => (prev === "canvas" ? "none" : "canvas"))}
+                className={cn(
+                  "h-7 px-2.5 text-[11px] font-mono gap-1.5 transition-all",
+                  rightPanel === "canvas" ? "bg-primary text-primary-foreground" : "border-primary/40 text-primary"
+                )}
+                title="Toggle Live Code Artifact Canvas"
+              >
+                <Code2 className="size-3.5" />
+                <span>Canvas</span>
+              </Button>
+            )}
+
             {/* View Mode Switcher */}
             <div className="flex rounded-lg bg-muted/60 p-0.5 border border-border/40 text-[11px] font-mono">
               <button
                 onClick={() => setViewMode("chat")}
                 className={cn(
                   "px-2 py-0.5 rounded transition-all",
-                  viewMode === "chat" ? "bg-background text-foreground shadow-sm" : "text-muted-foreground"
+                  viewMode === "chat" ? "bg-background text-foreground shadow-sm font-semibold" : "text-muted-foreground hover:text-foreground"
                 )}
                 title="Chat Only"
               >
@@ -535,7 +576,7 @@ export default function ChatBot({ threadId, initialMessages = [] }: ChatBotProps
                 onClick={() => setViewMode("split")}
                 className={cn(
                   "px-2 py-0.5 rounded transition-all flex items-center gap-1",
-                  viewMode === "split" ? "bg-background text-foreground shadow-sm" : "text-muted-foreground"
+                  viewMode === "split" ? "bg-background text-foreground shadow-sm font-semibold" : "text-muted-foreground hover:text-foreground"
                 )}
                 title="Split Terminal View"
               >
@@ -546,7 +587,7 @@ export default function ChatBot({ threadId, initialMessages = [] }: ChatBotProps
                 onClick={() => setViewMode("terminal")}
                 className={cn(
                   "px-2 py-0.5 rounded transition-all flex items-center gap-1",
-                  viewMode === "terminal" ? "bg-background text-foreground shadow-sm" : "text-muted-foreground"
+                  viewMode === "terminal" ? "bg-background text-foreground shadow-sm font-semibold" : "text-muted-foreground hover:text-foreground"
                 )}
                 title="Full Terminal / TUI"
               >
@@ -573,16 +614,16 @@ export default function ChatBot({ threadId, initialMessages = [] }: ChatBotProps
         <div ref={containerRef} className="flex-1 overflow-y-auto p-4 md:p-6 space-y-6">
           {messages.length === 0 ? (
             <div className="h-full flex flex-col items-center justify-center text-center max-w-md mx-auto py-12 space-y-4">
-              <div className="p-3 rounded-2xl bg-primary/10 border border-primary/20 text-primary">
+              <div className="p-3.5 rounded-2xl bg-primary/10 border border-primary/20 text-primary shadow-lg shadow-primary/5">
                 <Sparkles className="size-8 text-primary" />
               </div>
               <div>
                 <h2 className="text-xl font-bold tracking-tight text-foreground">
                   GlyteOS Hermes Native Client
                 </h2>
-                <p className="text-xs text-muted-foreground mt-1 leading-relaxed">
-                  Enterprise AI OS Client connected directly via JSON-RPC 2.0 to your local or remote Hermes Agent.
-                  Execute terminal commands, manage skills, and automate workflows with interactive approvals.
+                <p className="text-xs text-muted-foreground mt-1.5 leading-relaxed">
+                  Autonomous AI OS Client connected directly via JSON-RPC 2.0 to your local or remote Hermes Agent.
+                  Execute terminal commands, manage skills, and inspect files with in-stream interactive approvals.
                 </p>
               </div>
 
@@ -593,7 +634,7 @@ export default function ChatBot({ threadId, initialMessages = [] }: ChatBotProps
                     key={i}
                     type="button"
                     onClick={() => setInput(prompt)}
-                    className="p-2.5 rounded-xl border border-border/50 bg-card/40 hover:bg-card hover:border-primary/40 transition-all text-xs text-zinc-300 font-mono text-left"
+                    className="p-3 rounded-2xl border border-border/50 bg-card/30 hover:bg-card hover:border-primary/40 transition-all text-xs text-zinc-300 font-mono text-left shadow-sm hover:scale-[1.01]"
                   >
                     {prompt}
                   </button>
@@ -615,7 +656,7 @@ export default function ChatBot({ threadId, initialMessages = [] }: ChatBotProps
                   )}
                 >
                   {!isUser && (
-                    <div className="size-7 rounded-lg bg-primary/10 border border-primary/20 flex items-center justify-center text-primary shrink-0 mt-1">
+                    <div className="size-8 rounded-xl bg-primary/10 border border-primary/20 flex items-center justify-center text-primary shrink-0 mt-1 shadow-sm">
                       <Bot className="size-4" />
                     </div>
                   )}
@@ -691,8 +732,9 @@ export default function ChatBot({ threadId, initialMessages = [] }: ChatBotProps
                                       language: match ? match[1] : "markdown",
                                       code: match ? match[2] : message.content,
                                     });
+                                    setRightPanel("canvas");
                                   }}
-                                  className="h-7 px-2 text-[11px] font-mono gap-1.5 border-primary/30 text-primary hover:bg-primary/10"
+                                  className="h-7 px-2.5 text-[11px] font-mono gap-1.5 border-primary/30 text-primary hover:bg-primary/10 rounded-lg"
                                 >
                                   <Code2 className="size-3" />
                                   Open in Live Artifact Canvas
@@ -714,7 +756,7 @@ export default function ChatBot({ threadId, initialMessages = [] }: ChatBotProps
                   </div>
 
                   {isUser && (
-                    <div className="size-7 rounded-lg bg-muted border border-border/50 flex items-center justify-center text-muted-foreground shrink-0 mt-1">
+                    <div className="size-8 rounded-xl bg-muted border border-border/50 flex items-center justify-center text-muted-foreground shrink-0 mt-1 shadow-sm">
                       <User className="size-4" />
                     </div>
                   )}
@@ -743,7 +785,7 @@ export default function ChatBot({ threadId, initialMessages = [] }: ChatBotProps
         {/* Composer Area with Pills & Annotator */}
         <div className="p-4 border-t border-border/40 bg-card/20 backdrop-blur-md relative">
           <div className="max-w-3xl mx-auto space-y-2">
-            {/* Context variable pill bar */}
+            {/* Context variable pill bar & Incognito Mode */}
             <div className="flex items-center justify-between">
               <VariablePills
                 onInsert={(variable) => {
@@ -765,19 +807,9 @@ export default function ChatBot({ threadId, initialMessages = [] }: ChatBotProps
                 )}
               >
                 {isTemporaryChat ? <EyeOff className="size-3" /> : <Lock className="size-3" />}
-                {isTemporaryChat ? "Incognito ON" : "Normal Mode"}
+                {isTemporaryChat ? "Incognito Active" : "Normal Mode"}
               </button>
             </div>
-
-            {/* Intent clarification chips when input is empty */}
-            {messages.length === 0 && !input && (
-              <IntentClarification
-                onSelectIntent={(intent) => {
-                  setInput(intent.prefix);
-                  textareaRef.current?.focus();
-                }}
-              />
-            )}
 
             {/* Slash command autocomplete overlay */}
             {showSlashMenu && (
@@ -789,7 +821,11 @@ export default function ChatBot({ threadId, initialMessages = [] }: ChatBotProps
                   <button
                     key={sc.command}
                     onClick={() => {
-                      if (sc.action.startsWith("nav:")) {
+                      if (sc.action === "toggle:workspace") {
+                        setRightPanel((prev) => (prev === "workspace" ? "none" : "workspace"));
+                        setInput("");
+                        setShowSlashMenu(false);
+                      } else if (sc.action.startsWith("nav:")) {
                         window.location.href = sc.action.slice(4);
                       } else if (sc.action === "terminal") {
                         setViewMode("terminal");
@@ -814,8 +850,8 @@ export default function ChatBot({ threadId, initialMessages = [] }: ChatBotProps
               </div>
             )}
 
-            {/* Input Box */}
-            <div className="relative rounded-2xl border border-border/60 bg-background/80 focus-within:border-primary/50 transition-all shadow-lg overflow-hidden">
+            {/* Input Box with subtle neon border */}
+            <div className="relative rounded-2xl border border-border/60 bg-background/80 focus-within:border-primary/60 focus-within:shadow-[0_0_20px_rgba(99,102,241,0.15)] transition-all shadow-lg overflow-hidden">
               <textarea
                 ref={textareaRef}
                 rows={1}
@@ -825,7 +861,7 @@ export default function ChatBot({ threadId, initialMessages = [] }: ChatBotProps
                 onKeyDown={handleKeyDown}
                 placeholder={
                   connectionState === "open"
-                    ? "Type / for slash commands, # for variables, or message Hermes... (Enter to send)"
+                    ? "Message Hermes Agent... (Type / for slash commands, # for variables)"
                     : "Connecting to Hermes Gateway..."
                 }
                 className="w-full px-4 pt-3.5 pb-12 bg-transparent text-sm text-foreground resize-none focus:outline-none placeholder:text-muted-foreground"
@@ -860,7 +896,7 @@ export default function ChatBot({ threadId, initialMessages = [] }: ChatBotProps
                 </Button>
 
                 <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-muted/60 text-zinc-400 ml-1">
-                  RPC 2.0
+                  JSON-RPC 2.0
                 </span>
               </div>
 
@@ -881,7 +917,7 @@ export default function ChatBot({ threadId, initialMessages = [] }: ChatBotProps
             </div>
 
             <p className="text-[10px] text-center text-muted-foreground">
-              GlyteOS Hermes · Enterprise AI OS Client by GlyteTech · RPC & Tool Approvals Active
+              GlyteOS Hermes · Enterprise AI OS Client by GlyteTech · RPC & Approvals Active
             </p>
           </div>
         </div>
@@ -909,13 +945,35 @@ export default function ChatBot({ threadId, initialMessages = [] }: ChatBotProps
         </div>
       )}
 
-      {/* Dockable Live Markdown Artifact Canvas */}
-      {activeArtifact && (
-        <ArtifactCanvas
-          artifact={activeArtifact}
-          onClose={() => setActiveArtifact(null)}
-          className="border-l border-border/40 shadow-2xl"
-        />
+      {/* Right Sidebar: Workspace Explorer */}
+      {rightPanel === "workspace" && (
+        <div className="w-80 sm:w-96 lg:w-[460px] h-full border-l border-border/50 flex flex-col bg-[#0b0f19] shadow-2xl relative z-20">
+          <div className="px-4 py-2 border-b border-border/40 bg-card/30 flex items-center justify-between text-xs">
+            <span className="font-mono text-primary font-semibold flex items-center gap-1.5">
+              <Layers className="size-3.5" /> Workspace Drawer
+            </span>
+            <button
+              onClick={() => setRightPanel("none")}
+              className="p-1 rounded-md text-muted-foreground hover:text-foreground"
+            >
+              <X className="size-4" />
+            </button>
+          </div>
+          <div className="flex-1 overflow-hidden">
+            <WorkspaceDrawer />
+          </div>
+        </div>
+      )}
+
+      {/* Right Sidebar: Live Markdown Artifact Canvas */}
+      {rightPanel === "canvas" && activeArtifact && (
+        <div className="w-80 sm:w-96 lg:w-[480px] h-full border-l border-border/50 flex flex-col bg-[#0b0f19] shadow-2xl relative z-20">
+          <ArtifactCanvas
+            artifact={activeArtifact}
+            onClose={() => setRightPanel("none")}
+            className="w-full h-full shadow-none border-none"
+          />
+        </div>
       )}
 
       {/* Visual Context Annotator Modal */}

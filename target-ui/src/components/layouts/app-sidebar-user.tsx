@@ -140,21 +140,21 @@ export function AppSidebarUserInner(props: {
             <DropdownMenuItem
               onClick={() => {
                 window.open(
-                  "https://github.com/cgoinglove/better-chatbot/issues/new",
+                  "https://github.com/keshavsharma/Glyte-hermes-os/issues",
                   "_blank",
                 );
               }}
             >
               <GithubIcon className="size-4 fill-foreground" />
-              <span>{t("reportAnIssue")}</span>
+              <span>Report an Issue (GlyteOS)</span>
             </DropdownMenuItem>
             <DropdownMenuItem
               onClick={() => {
-                window.open("https://discord.gg/gCRu69Upnp", "_blank");
+                window.open("https://glyte.tech", "_blank");
               }}
             >
               <DiscordIcon className="size-4 fill-foreground" />
-              <span>{t("joinCommunity")}</span>
+              <span>GlyteTech Portal</span>
             </DropdownMenuItem>
             <DropdownMenuSeparator />
 
