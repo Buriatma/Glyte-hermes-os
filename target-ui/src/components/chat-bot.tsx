@@ -30,6 +30,9 @@ import {
   Lock,
   Layers,
   X,
+  FolderKanban,
+  Users,
+  Search,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -40,6 +43,11 @@ import { ArtifactCanvas, ArtifactContent } from "@/components/chat/ArtifactCanva
 import { TerminalView } from "@/components/hermes/TerminalView";
 import { VoiceChatModal } from "@/components/chat/VoiceChatModal";
 import { WorkspaceDrawer } from "@/components/hermes/WorkspaceDrawer";
+import { KanbanBoard } from "@/components/hermes/KanbanBoard";
+import { GlobalSpotlightHUD } from "@/components/hermes/GlobalSpotlightHUD";
+import { MultiAgentRooms } from "@/components/hermes/MultiAgentRooms";
+import { HardwareTelemetryHUD } from "@/components/hermes/HardwareTelemetryHUD";
+import { MemoryGraphVisualizer } from "@/components/hermes/MemoryGraphVisualizer";
 
 interface ChatBotProps {
   threadId: string;
@@ -74,8 +82,11 @@ export default function ChatBot({ threadId, initialMessages = [] }: ChatBotProps
   // Layout View Mode: "chat" | "split" | "terminal"
   const [viewMode, setViewMode] = useState<"chat" | "split" | "terminal">("chat");
 
-  // Right-Sidebar Panel: "none" | "workspace" | "canvas"
-  const [rightPanel, setRightPanel] = useState<"none" | "workspace" | "canvas">("none");
+  // Right-Sidebar Panel: "none" | "workspace" | "canvas" | "kanban" | "rooms" | "memory"
+  const [rightPanel, setRightPanel] = useState<"none" | "workspace" | "canvas" | "kanban" | "rooms" | "memory">("none");
+
+  // Global Spotlight HUD
+  const [isSpotlightOpen, setIsSpotlightOpen] = useState(false);
 
   // Temporary / Incognito Chat Mode
   const [isTemporaryChat, setIsTemporaryChat] = useState<boolean>(false);
@@ -107,6 +118,53 @@ export default function ChatBot({ threadId, initialMessages = [] }: ChatBotProps
   useEffect(() => {
     scrollToBottom(true);
   }, [messages, pendingApprovals, scrollToBottom]);
+
+  // Global Cmd + K / Ctrl + K shortcut
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === "k") {
+        e.preventDefault();
+        setIsSpotlightOpen((prev) => !prev);
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, []);
+
+  const handleSpotlightAction = (action: string, payload?: any) => {
+    switch (action) {
+      case "action:kanban":
+        setRightPanel("kanban");
+        break;
+      case "action:workspace":
+        setRightPanel("workspace");
+        break;
+      case "action:terminal":
+        setViewMode("split");
+        break;
+      case "action:rooms":
+        setRightPanel("rooms");
+        break;
+      case "action:memory":
+        setRightPanel("memory");
+        break;
+      case "action:secrets":
+        window.location.href = "/secrets";
+        break;
+      case "skill:inspect":
+        if (payload?.name) {
+          handleSendMessage(`Explain and show usage instructions for skill: ${payload.name}`);
+        }
+        break;
+      case "session:load":
+        if (payload) {
+          window.location.href = `/chat/${payload}`;
+        }
+        break;
+      default:
+        break;
+    }
+  };
 
   // Connect to Hermes Gateway
   useEffect(() => {
@@ -528,20 +586,81 @@ export default function ChatBot({ threadId, initialMessages = [] }: ChatBotProps
             </span>
           </div>
 
-          <div className="flex items-center gap-2">
-            {/* Right Sidebar Controls: Workspace & Canvas */}
+          <div className="flex items-center gap-1.5">
+            {/* Hardware Telemetry HUD & Model Selector */}
+            <HardwareTelemetryHUD />
+
+            {/* Global Spotlight (Cmd + K) */}
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setIsSpotlightOpen(true)}
+              className="h-7 px-2 text-[11px] font-mono gap-1 border-border/50 text-zinc-300 hover:text-foreground"
+              title="Global Spotlight HUD (Cmd + K)"
+            >
+              <Search className="size-3 text-primary" />
+              <span className="hidden sm:inline">Spotlight</span>
+              <kbd className="text-[9px] px-1 py-0.2 rounded bg-muted text-muted-foreground font-mono">⌘K</kbd>
+            </Button>
+
+            {/* Kanban Task Board */}
+            <Button
+              variant={rightPanel === "kanban" ? "default" : "outline"}
+              size="sm"
+              onClick={() => setRightPanel((prev) => (prev === "kanban" ? "none" : "kanban"))}
+              className={cn(
+                "h-7 px-2 text-[11px] font-mono gap-1 transition-all",
+                rightPanel === "kanban" ? "bg-amber-600 text-white shadow-sm" : "border-border/50 text-zinc-300 hover:text-foreground"
+              )}
+              title="Toggle Hermes Kanban Task Board"
+            >
+              <FolderKanban className="size-3.5" />
+              <span className="hidden lg:inline">Kanban</span>
+            </Button>
+
+            {/* Multi-Agent Rooms */}
+            <Button
+              variant={rightPanel === "rooms" ? "default" : "outline"}
+              size="sm"
+              onClick={() => setRightPanel((prev) => (prev === "rooms" ? "none" : "rooms"))}
+              className={cn(
+                "h-7 px-2 text-[11px] font-mono gap-1 transition-all",
+                rightPanel === "rooms" ? "bg-purple-600 text-white shadow-sm" : "border-border/50 text-zinc-300 hover:text-foreground"
+              )}
+              title="Toggle Multi-Agent Collaborative Room"
+            >
+              <Users className="size-3.5" />
+              <span className="hidden lg:inline">Rooms</span>
+            </Button>
+
+            {/* Memory Graph */}
+            <Button
+              variant={rightPanel === "memory" ? "default" : "outline"}
+              size="sm"
+              onClick={() => setRightPanel((prev) => (prev === "memory" ? "none" : "memory"))}
+              className={cn(
+                "h-7 px-2 text-[11px] font-mono gap-1 transition-all",
+                rightPanel === "memory" ? "bg-indigo-600 text-white shadow-sm" : "border-border/50 text-zinc-300 hover:text-foreground"
+              )}
+              title="Toggle Associative Memory Graph"
+            >
+              <Brain className="size-3.5" />
+              <span className="hidden lg:inline">Memory</span>
+            </Button>
+
+            {/* Workspace Explorer */}
             <Button
               variant={rightPanel === "workspace" ? "default" : "outline"}
               size="sm"
               onClick={() => setRightPanel((prev) => (prev === "workspace" ? "none" : "workspace"))}
               className={cn(
-                "h-7 px-2.5 text-[11px] font-mono gap-1.5 transition-all",
+                "h-7 px-2 text-[11px] font-mono gap-1 transition-all",
                 rightPanel === "workspace" ? "bg-primary text-primary-foreground shadow-sm" : "border-border/50 text-zinc-300 hover:text-foreground"
               )}
               title="Toggle Workspace Explorer on right sidebar"
             >
               <Layers className="size-3.5" />
-              <span>Workspace</span>
+              <span className="hidden lg:inline">Workspace</span>
             </Button>
 
             {activeArtifact && (
@@ -550,13 +669,13 @@ export default function ChatBot({ threadId, initialMessages = [] }: ChatBotProps
                 size="sm"
                 onClick={() => setRightPanel((prev) => (prev === "canvas" ? "none" : "canvas"))}
                 className={cn(
-                  "h-7 px-2.5 text-[11px] font-mono gap-1.5 transition-all",
+                  "h-7 px-2 text-[11px] font-mono gap-1 transition-all",
                   rightPanel === "canvas" ? "bg-primary text-primary-foreground" : "border-primary/40 text-primary"
                 )}
                 title="Toggle Live Code Artifact Canvas"
               >
                 <Code2 className="size-3.5" />
-                <span>Canvas</span>
+                <span className="hidden lg:inline">Canvas</span>
               </Button>
             )}
 
@@ -975,6 +1094,34 @@ export default function ChatBot({ threadId, initialMessages = [] }: ChatBotProps
           />
         </div>
       )}
+
+      {/* Right Sidebar: Hermes Kanban Task Board */}
+      {rightPanel === "kanban" && (
+        <div className="w-80 sm:w-96 lg:w-[540px] xl:w-[620px] h-full border-l border-border/50 flex flex-col bg-[#0b0f19] shadow-2xl relative z-20">
+          <KanbanBoard onClose={() => setRightPanel("none")} />
+        </div>
+      )}
+
+      {/* Right Sidebar: Multi-Agent Rooms */}
+      {rightPanel === "rooms" && (
+        <div className="w-80 sm:w-96 lg:w-[480px] xl:w-[560px] h-full border-l border-border/50 flex flex-col bg-[#0b0f19] shadow-2xl relative z-20">
+          <MultiAgentRooms onClose={() => setRightPanel("none")} />
+        </div>
+      )}
+
+      {/* Right Sidebar: Memory Graph Visualizer */}
+      {rightPanel === "memory" && (
+        <div className="w-80 sm:w-96 lg:w-[520px] xl:w-[600px] h-full border-l border-border/50 flex flex-col bg-[#0b0f19] shadow-2xl relative z-20">
+          <MemoryGraphVisualizer onClose={() => setRightPanel("none")} />
+        </div>
+      )}
+
+      {/* Global Spotlight HUD (Cmd + K) */}
+      <GlobalSpotlightHUD
+        isOpen={isSpotlightOpen}
+        onClose={() => setIsSpotlightOpen(false)}
+        onSelectAction={handleSpotlightAction}
+      />
 
       {/* Visual Context Annotator Modal */}
       {annotatingImageUrl && (

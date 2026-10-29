@@ -65,6 +65,11 @@ Install and launch the GlyteOS Hermes WebUI client for me:
 | **Embedded Cache & Indexing** | **High-Concurrency SQLite WAL + FTS5 Full-Text Search** | No Full-Text Search | Cloud Search |
 | **Catalog & Search Speed** | **< 2ms Instant FTS5 Indexing across 950+ Skills** | Slow Static Scan | N/A |
 | **Right-Sidebar Workspace** | **Live Tree + Syntax Code + Git Diff + Raw Download** | No | No |
+| **Hermes Kanban Task Board** | **Live Subagent Task Columns (`session_kanban.py`)** | No | No |
+| **Global Spotlight HUD** | **Instant `Cmd + K` Palette + SQLite FTS5 Search** | No | No |
+| **Multi-Agent Rooms** | **Autonomous Debate & Consensus (`hosted_rooms.py`)** | No | No |
+| **Hardware Telemetry HUD** | **Live VRAM, CPU, Tokens/Sec + 1-Click Model Switch** | No | No |
+| **Memory Knowledge Graph** | **Associative 2D/3D Node Visualizer (`~/.hermes/memory`)**| No | No |
 | **Official Skills Catalog** | **950+ Built-in Official Skills & Plugins** | Static list | No |
 | **In-Stream Human Approvals** | **Interactive Diff + 1-Click Approve/Reject** | Terminal Prompt | N/A |
 | **In-Browser Terminal & TUI** | **Embedded xterm.js (Split & Full View)** | No | No |
@@ -149,6 +154,33 @@ Install and launch the GlyteOS Hermes WebUI client for me:
 - Integrated mic button with real-time Web Audio API frequency waveform visualizer.
 - End-to-end audio pipeline routing STT / TTS through Whisper and streaming speech endpoints.
 - Hands-free auto-send mode with silence detection.
+
+### 10. Native Hermes Kanban Task Board (`session_kanban.py`)
+- Dockable visual Kanban board integrated with Hermes `session_kanban.py` protocol.
+- Live task columns: **Backlog**, **In Progress**, **HITL Review**, and **Completed**.
+- Real-time step progress bars, token consumption metrics, assigned subagent tags (`@code-agent`, `@security-auditor`), and 1-click stage advancement.
+
+### 11. Global Spotlight HUD (`Cmd + K` / `Ctrl + K`)
+- Raycast & Alfred-style floating command palette accessible from anywhere via `Cmd + K`.
+- High-speed keyword and prefix search across 950+ official skills and entire conversation history powered by embedded SQLite FTS5.
+- Instant navigation commands to toggle panels, switch models, or trigger diagnostics without touching the mouse.
+
+### 12. Multi-Agent Discussion Rooms (`hosted_rooms.py`)
+- Collaborative roundtable discussions bringing together specialized autonomous personas:
+  - 🏛️ **System Architect**: Designs system contracts and interfaces.
+  - 💻 **Core Developer**: Implements code diffs and patches.
+  - 🛡️ **Security Auditor**: Verifies secrets, permissions, and vulnerabilities.
+  - 🧪 **QA Tester**: Validates edge cases and runs automated checks.
+- Live consensus meter (0–100%) and shared deliberation transcript before asking for human operator approval.
+
+### 13. Hardware Telemetry HUD & Local Model Switcher
+- Real-time system telemetry HUD displaying GPU VRAM usage, system CPU load, and tokens/sec generation speed.
+- 1-click switcher toggling seamlessly between **Local Air-Gapped Models** (Hermes 3 8B/70B, Qwen 2.5 Coder via Ollama/vLLM) and **Cloud Frontier Models** (Claude 3.7 Sonnet, GPT-4o, DeepSeek R1).
+
+### 14. Associative Memory & Knowledge Graph Visualizer
+- Visual 2D/3D knowledge graph representing long-term memory persisted in `~/.hermes/memory/` and `MEMORY.md`.
+- Clustered nodes for **Directives**, **Architecture Decisions**, **User Preferences**, **Learned Skills**, and **Known Pitfalls**.
+- Clickable node inspection with associative link exploration and direct knowledge editing.
 
 ---
 
