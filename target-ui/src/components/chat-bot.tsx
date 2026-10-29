@@ -1,0 +1,940 @@
+"use client";
+
+import React, { useCallback, useEffect, useRef, useState } from "react";
+import {
+  ApprovalRequestPayload,
+  ConnectionState,
+  getGatewayClient,
+  HermesMessage,
+  HermesToolCall,
+} from "@/lib/hermes/gateway-client";
+import { ApprovalCard } from "@/components/chat/ApprovalCard";
+import { Markdown } from "@/components/markdown";
+import {
+  Send,
+  Terminal,
+  ShieldAlert,
+  Loader2,
+  Sparkles,
+  Bot,
+  User,
+  RefreshCw,
+  Brain,
+  ChevronDown,
+  ChevronUp,
+  Mic,
+  Image as ImageIcon,
+  Columns,
+  EyeOff,
+  Code2,
+  Lock,
+} from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { cn } from "@/lib/utils";
+import { VisualAnnotator, VisualAnnotation } from "@/components/chat/VisualAnnotator";
+import { IntentClarification } from "@/components/chat/IntentClarification";
+import { VariablePills } from "@/components/chat/VariablePills";
+import { ArtifactCanvas, ArtifactContent } from "@/components/chat/ArtifactCanvas";
+import { TerminalView } from "@/components/hermes/TerminalView";
+import { VoiceChatModal } from "@/components/chat/VoiceChatModal";
+
+interface ChatBotProps {
+  threadId: string;
+  initialMessages?: HermesMessage[];
+  selectedChatModel?: string;
+}
+
+const SLASH_COMMANDS = [
+  { command: "/help", desc: "Show Hermes OS command reference", action: "help" },
+  { command: "/clear", desc: "Clear active conversation history", action: "clear" },
+  { command: "/model", desc: "Show or change active model", action: "model" },
+  { command: "/skills", desc: "Open Hermes Skills Manager", action: "nav:/skills" },
+  { command: "/memory", desc: "Open MEMORY.md & USER.md editor", action: "nav:/memory" },
+  { command: "/cron", desc: "Open Cron Schedule Manager", action: "nav:/cron" },
+  { command: "/sessions", desc: "Search & resume SQLite sessions", action: "nav:/sessions" },
+  { command: "/workspace", desc: "Open Workspace Directory & Git Diff", action: "nav:/workspace" },
+  { command: "/secrets", desc: "Open OpenClaw Secret Vault", action: "nav:/secrets" },
+  { command: "/swarm", desc: "View Autonomous Swarm & Subagents", action: "nav:/swarm" },
+  { command: "/terminal", desc: "Toggle In-Browser TUI & Terminal", action: "terminal" },
+  { command: "/doctor", desc: "Run gateway system diagnostics", action: "doctor" },
+];
+
+export default function ChatBot({ threadId, initialMessages = [] }: ChatBotProps) {
+  const [messages, setMessages] = useState<HermesMessage[]>(initialMessages);
+  const [input, setInput] = useState("");
+  const [connectionState, setConnectionState] = useState<ConnectionState>("connecting");
+  const [gatewayUrl, setGatewayUrl] = useState("");
+  const [isStreaming, setIsStreaming] = useState(false);
+  const [pendingApprovals, setPendingApprovals] = useState<ApprovalRequestPayload[]>([]);
+  const [expandedReasoning, setExpandedReasoning] = useState<Record<string, boolean>>({});
+
+  // Layout View Mode: "chat" | "split" | "terminal"
+  const [viewMode, setViewMode] = useState<"chat" | "split" | "terminal">("chat");
+
+  // Temporary / Incognito Chat Mode
+  const [isTemporaryChat, setIsTemporaryChat] = useState<boolean>(false);
+
+  // Active Artifact Canvas
+  const [activeArtifact, setActiveArtifact] = useState<ArtifactContent | null>(null);
+
+  // Modals
+  const [isVoiceOpen, setIsVoiceOpen] = useState(false);
+  const [annotatingImageUrl, setAnnotatingImageUrl] = useState<string | null>(null);
+
+  // Slash commands dropdown
+  const [showSlashMenu, setShowSlashMenu] = useState(false);
+  const [slashFilter, setSlashFilter] = useState("");
+
+  const containerRef = useRef<HTMLDivElement>(null);
+  const messagesEndRef = useRef<HTMLDivElement>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const scrollToBottom = useCallback((smooth = true) => {
+    messagesEndRef.current?.scrollIntoView({ behavior: smooth ? "smooth" : "auto" });
+  }, []);
+
+  useEffect(() => {
+    scrollToBottom(false);
+  }, [scrollToBottom]);
+
+  useEffect(() => {
+    scrollToBottom(true);
+  }, [messages, pendingApprovals, scrollToBottom]);
+
+  // Connect to Hermes Gateway
+  useEffect(() => {
+    const client = getGatewayClient();
+    setGatewayUrl(client.getGatewayUrl());
+    client.setActiveSession(threadId);
+
+    const unsubState = client.onStateChange((state) => {
+      setConnectionState(state);
+    });
+
+    // Inbound stream chunk
+    const unsubChunk = client.on("chat.stream_chunk", (data: { text: string; sessionId?: string }) => {
+      setIsStreaming(true);
+      setMessages((prev) => {
+        const last = prev[prev.length - 1];
+        if (last && last.role === "assistant" && last.status === "streaming") {
+          return [
+            ...prev.slice(0, -1),
+            { ...last, content: last.content + data.text },
+          ];
+        }
+        const newMsg: HermesMessage = {
+          id: `asst_${Date.now()}`,
+          role: "assistant",
+          content: data.text,
+          status: "streaming",
+          createdAt: Date.now(),
+        };
+        return [...prev, newMsg];
+      });
+    });
+
+    // Inbound reasoning delta
+    const unsubReasoning = client.on("chat.reasoning", (data: { text: string; sessionId?: string }) => {
+      setMessages((prev) => {
+        const last = prev[prev.length - 1];
+        if (last && last.role === "assistant") {
+          return [
+            ...prev.slice(0, -1),
+            { ...last, reasoning: (last.reasoning || "") + data.text },
+          ];
+        }
+        const newMsg: HermesMessage = {
+          id: `asst_${Date.now()}`,
+          role: "assistant",
+          content: "",
+          reasoning: data.text,
+          status: "streaming",
+          createdAt: Date.now(),
+        };
+        return [...prev, newMsg];
+      });
+    });
+
+    // Tool Telemetry (Badges)
+    const unsubTelemetry = client.on("tool.telemetry", (data: any) => {
+      const { type, call_id, tool_name, args, command, output, error } = data;
+      setMessages((prev) => {
+        const last = prev[prev.length - 1];
+        if (!last || last.role !== "assistant") return prev;
+
+        const currentToolCalls = last.toolCalls || [];
+        const existingIdx = currentToolCalls.findIndex((t) => t.id === call_id);
+
+        let updatedToolCalls: HermesToolCall[];
+        if (type === "tool.start") {
+          const newTool: HermesToolCall = {
+            id: call_id || `tool_${Date.now()}`,
+            toolName: tool_name || "terminal",
+            command,
+            args,
+            status: "running",
+            startTime: Date.now(),
+          };
+          updatedToolCalls = existingIdx >= 0
+            ? currentToolCalls.map((t, idx) => (idx === existingIdx ? newTool : t))
+            : [...currentToolCalls, newTool];
+        } else if (type === "tool.end") {
+          updatedToolCalls = currentToolCalls.map((t, idx) => {
+            if (idx === existingIdx || (!call_id && idx === currentToolCalls.length - 1)) {
+              return {
+                ...t,
+                status: error ? "failed" : "complete",
+                output,
+                error,
+                endTime: Date.now(),
+              };
+            }
+            return t;
+          });
+        } else {
+          updatedToolCalls = currentToolCalls;
+        }
+
+        return [
+          ...prev.slice(0, -1),
+          { ...last, toolCalls: updatedToolCalls },
+        ];
+      });
+    });
+
+    // Inbound Approval Request
+    const unsubApproval = client.on("approval.request", (payload: ApprovalRequestPayload) => {
+      setPendingApprovals((prev) => {
+        if (prev.some((p) => p.requestId === payload.requestId)) return prev;
+        return [...prev, payload];
+      });
+      setMessages((prev) => {
+        const last = prev[prev.length - 1];
+        if (last && last.role === "assistant") {
+          const tools = last.toolCalls || [];
+          return [
+            ...prev.slice(0, -1),
+            {
+              ...last,
+              toolCalls: [
+                ...tools,
+                {
+                  id: payload.requestId,
+                  toolName: payload.toolName,
+                  command: payload.command,
+                  args: payload.args,
+                  diff: payload.diff,
+                  status: "needs_approval",
+                },
+              ],
+            },
+          ];
+        }
+        return prev;
+      });
+    });
+
+    // Approval Settled
+    const unsubSettled = client.on("approval.settled", (data: { requestId: string }) => {
+      setPendingApprovals((prev) => prev.filter((p) => p.requestId !== data.requestId));
+    });
+
+    // Stream complete
+    const unsubComplete = client.on("chat.complete", () => {
+      setIsStreaming(false);
+      setMessages((prev) => {
+        const last = prev[prev.length - 1];
+        if (last && last.role === "assistant") {
+          // Check if message contains code block to suggest opening in canvas
+          if (last.content && (last.content.includes("```html") || last.content.includes("```tsx") || last.content.includes("```mermaid"))) {
+            const match = last.content.match(/```(html|tsx|typescript|jsx|mermaid|svg)\n([\s\S]*?)```/);
+            if (match) {
+              setActiveArtifact({
+                id: `art_${last.id}`,
+                title: "Generated Artifact",
+                language: match[1],
+                code: match[2],
+              });
+            }
+          }
+          return [
+            ...prev.slice(0, -1),
+            { ...last, status: "complete" },
+          ];
+        }
+        return prev;
+      });
+    });
+
+    // Connect
+    client.connect().catch((err) => {
+      console.warn("Gateway connection failed at mount:", err.message);
+    });
+
+    return () => {
+      unsubState();
+      unsubChunk();
+      unsubReasoning();
+      unsubTelemetry();
+      unsubApproval();
+      unsubSettled();
+      unsubComplete();
+    };
+  }, [threadId]);
+
+  // Handle message submit
+  const handleSendMessage = async (customText?: string) => {
+    const text = (customText || input).trim();
+    if (!text || isStreaming) return;
+
+    // Intercept client slash commands
+    if (text.startsWith("/")) {
+      const cmd = text.toLowerCase().split(" ")[0];
+      if (cmd === "/clear") {
+        setMessages([]);
+        setInput("");
+        return;
+      }
+      if (cmd === "/terminal") {
+        setViewMode((m) => (m === "terminal" ? "chat" : "terminal"));
+        setInput("");
+        return;
+      }
+      if (cmd === "/skills") {
+        window.location.href = "/skills";
+        return;
+      }
+      if (cmd === "/memory") {
+        window.location.href = "/memory";
+        return;
+      }
+      if (cmd === "/cron") {
+        window.location.href = "/cron";
+        return;
+      }
+      if (cmd === "/sessions") {
+        window.location.href = "/sessions";
+        return;
+      }
+      if (cmd === "/workspace") {
+        window.location.href = "/workspace";
+        return;
+      }
+      if (cmd === "/secrets") {
+        window.location.href = "/secrets";
+        return;
+      }
+      if (cmd === "/swarm") {
+        window.location.href = "/swarm";
+        return;
+      }
+    }
+
+    setInput("");
+    setShowSlashMenu(false);
+    if (textareaRef.current) {
+      textareaRef.current.style.height = "auto";
+    }
+
+    const userMsg: HermesMessage = {
+      id: `user_${Date.now()}`,
+      role: "user",
+      content: text,
+      createdAt: Date.now(),
+    };
+
+    const pendingAssistantMsg: HermesMessage = {
+      id: `asst_${Date.now() + 1}`,
+      role: "assistant",
+      content: "",
+      status: "streaming",
+      createdAt: Date.now() + 1,
+    };
+
+    setMessages((prev) => [...prev, userMsg, pendingAssistantMsg]);
+    setIsStreaming(true);
+
+    try {
+      const client = getGatewayClient();
+      // If temporary chat mode, prepend incognito header
+      const payloadText = isTemporaryChat
+        ? `[SYSTEM: TEMPORARY_INCOGNITO_MODE=TRUE - Do not write to MEMORY.md, do not persist to SQLite session db, block scheduled cron jobs]\n\n${text}`
+        : text;
+
+      await client.sendMessage(threadId, payloadText);
+    } catch (err: any) {
+      console.error("Failed to send message to Hermes Gateway:", err);
+      setIsStreaming(false);
+      setMessages((prev) => {
+        const last = prev[prev.length - 1];
+        if (last && last.role === "assistant") {
+          return [
+            ...prev.slice(0, -1),
+            {
+              ...last,
+              content: `Error connecting to Hermes Gateway: ${err.message}`,
+              status: "error",
+            },
+          ];
+        }
+        return prev;
+      });
+    }
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      handleSendMessage();
+    }
+  };
+
+  const handleInputChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    const val = e.target.value;
+    setInput(val);
+    e.target.style.height = "auto";
+    e.target.style.height = `${Math.min(e.target.scrollHeight, 200)}px`;
+
+    if (val.startsWith("/")) {
+      setShowSlashMenu(true);
+      setSlashFilter(val.slice(1).toLowerCase());
+    } else {
+      setShowSlashMenu(false);
+    }
+  };
+
+  const toggleReasoning = (msgId: string) => {
+    setExpandedReasoning((prev) => ({
+      ...prev,
+      [msgId]: !prev[msgId],
+    }));
+  };
+
+  // Image Upload for Visual Annotator
+  const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      if (typeof event.target?.result === "string") {
+        setAnnotatingImageUrl(event.target.result);
+      }
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const handleSaveAnnotations = (_annotations: VisualAnnotation[], promptSnippet: string) => {
+    setInput((prev) => (prev ? `${prev}\n\n${promptSnippet}` : promptSnippet));
+    setAnnotatingImageUrl(null);
+  };
+
+  const renderToolBadge = (tool: HermesToolCall) => {
+    const isRunning = tool.status === "running";
+    const isComplete = tool.status === "complete";
+    const isFailed = tool.status === "failed";
+    const needsApproval = tool.status === "needs_approval";
+
+    const label = tool.command
+      ? `${tool.toolName}("${tool.command}")`
+      : tool.toolName;
+
+    return (
+      <div
+        key={tool.id}
+        className={cn(
+          "inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg font-mono text-[11px] border transition-all",
+          isRunning && "bg-amber-500/10 border-amber-500/30 text-amber-300 animate-pulse",
+          isComplete && "bg-zinc-800/60 border-border/40 text-zinc-300",
+          isFailed && "bg-rose-500/10 border-rose-500/30 text-rose-300",
+          needsApproval && "bg-orange-500/15 border-orange-500/40 text-orange-300"
+        )}
+      >
+        {isRunning && <Loader2 className="size-3 animate-spin text-amber-500" />}
+        {isComplete && <Terminal className="size-3 text-emerald-500" />}
+        {isFailed && <ShieldAlert className="size-3 text-rose-500" />}
+        {needsApproval && <ShieldAlert className="size-3 text-orange-500" />}
+        <span>
+          {isRunning && `[Running: ${label}]`}
+          {isComplete && `[Done: ${tool.toolName}]`}
+          {isFailed && `[Failed: ${tool.toolName}]`}
+          {needsApproval && `[Waiting Approval: ${tool.toolName}]`}
+        </span>
+      </div>
+    );
+  };
+
+  const quickPrompts = [
+    "Run `git status` in terminal",
+    "List enabled skills in Hermes OS",
+    "Show active memory profile status",
+    "Check scheduled cron jobs",
+  ];
+
+  const filteredSlashCommands = SLASH_COMMANDS.filter((sc) =>
+    sc.command.toLowerCase().includes(slashFilter) || sc.desc.toLowerCase().includes(slashFilter)
+  );
+
+  return (
+    <div className="flex h-full w-full bg-background relative overflow-hidden">
+      {/* Main Chat / Split Left Pane */}
+      <div
+        className={cn(
+          "flex flex-col h-full overflow-hidden transition-all duration-200",
+          viewMode === "split" ? "w-1/2 border-r border-border/40" : "w-full",
+          viewMode === "terminal" && "hidden"
+        )}
+      >
+        {/* Top Protocol Status Bar */}
+        <div className="px-4 py-2 border-b border-border/40 bg-card/30 backdrop-blur-sm flex items-center justify-between text-xs">
+          <div className="flex items-center gap-2">
+            <div className="flex items-center gap-1.5 font-mono text-[11px]">
+              <span
+                className={cn(
+                  "size-2 rounded-full",
+                  connectionState === "open" && "bg-emerald-500 animate-pulse",
+                  connectionState === "connecting" && "bg-amber-500 animate-ping",
+                  connectionState === "error" && "bg-rose-500",
+                  connectionState === "closed" && "bg-zinc-500"
+                )}
+              />
+              <span className="font-medium text-foreground">GlyteOS Hermes</span>
+            </div>
+
+            <Badge variant="outline" className="text-[10px] font-mono px-1.5 py-0">
+              {connectionState === "open" ? "CONNECTED" : connectionState.toUpperCase()}
+            </Badge>
+
+            {isTemporaryChat && (
+              <Badge variant="outline" className="text-[10px] font-mono px-1.5 py-0 text-amber-400 border-amber-500/30 bg-amber-500/10 flex items-center gap-1">
+                <EyeOff className="size-2.5" />
+                Temporary Incognito
+              </Badge>
+            )}
+
+            <span className="text-[10px] text-muted-foreground font-mono hidden md:inline truncate max-w-xs">
+              {gatewayUrl}
+            </span>
+          </div>
+
+          <div className="flex items-center gap-2">
+            {/* View Mode Switcher */}
+            <div className="flex rounded-lg bg-muted/60 p-0.5 border border-border/40 text-[11px] font-mono">
+              <button
+                onClick={() => setViewMode("chat")}
+                className={cn(
+                  "px-2 py-0.5 rounded transition-all",
+                  viewMode === "chat" ? "bg-background text-foreground shadow-sm" : "text-muted-foreground"
+                )}
+                title="Chat Only"
+              >
+                Chat
+              </button>
+              <button
+                onClick={() => setViewMode("split")}
+                className={cn(
+                  "px-2 py-0.5 rounded transition-all flex items-center gap-1",
+                  viewMode === "split" ? "bg-background text-foreground shadow-sm" : "text-muted-foreground"
+                )}
+                title="Split Terminal View"
+              >
+                <Columns className="size-3" />
+                Split
+              </button>
+              <button
+                onClick={() => setViewMode("terminal")}
+                className={cn(
+                  "px-2 py-0.5 rounded transition-all flex items-center gap-1",
+                  viewMode === "terminal" ? "bg-background text-foreground shadow-sm" : "text-muted-foreground"
+                )}
+                title="Full Terminal / TUI"
+              >
+                <Terminal className="size-3" />
+                TUI
+              </button>
+            </div>
+
+            {connectionState !== "open" && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => getGatewayClient().connect()}
+                className="h-6 px-2 text-[10px] gap-1 text-primary hover:bg-primary/10"
+              >
+                <RefreshCw className="size-3" />
+                Reconnect
+              </Button>
+            )}
+          </div>
+        </div>
+
+        {/* Message Stream */}
+        <div ref={containerRef} className="flex-1 overflow-y-auto p-4 md:p-6 space-y-6">
+          {messages.length === 0 ? (
+            <div className="h-full flex flex-col items-center justify-center text-center max-w-md mx-auto py-12 space-y-4">
+              <div className="p-3 rounded-2xl bg-primary/10 border border-primary/20 text-primary">
+                <Sparkles className="size-8 text-primary" />
+              </div>
+              <div>
+                <h2 className="text-xl font-bold tracking-tight text-foreground">
+                  GlyteOS Hermes Native Client
+                </h2>
+                <p className="text-xs text-muted-foreground mt-1 leading-relaxed">
+                  Enterprise AI OS Client connected directly via JSON-RPC 2.0 to your local or remote Hermes Agent.
+                  Execute terminal commands, manage skills, and automate workflows with interactive approvals.
+                </p>
+              </div>
+
+              {/* Quick Prompts */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 w-full pt-4 text-left">
+                {quickPrompts.map((prompt, i) => (
+                  <button
+                    key={i}
+                    type="button"
+                    onClick={() => setInput(prompt)}
+                    className="p-2.5 rounded-xl border border-border/50 bg-card/40 hover:bg-card hover:border-primary/40 transition-all text-xs text-zinc-300 font-mono text-left"
+                  >
+                    {prompt}
+                  </button>
+                ))}
+              </div>
+            </div>
+          ) : (
+            messages.map((message) => {
+              const isUser = message.role === "user";
+              const showReasoning = Boolean(message.reasoning);
+              const isReasoningOpen = expandedReasoning[message.id] ?? true;
+
+              return (
+                <div
+                  key={message.id}
+                  className={cn(
+                    "flex gap-3 max-w-3xl mx-auto",
+                    isUser ? "justify-end" : "justify-start"
+                  )}
+                >
+                  {!isUser && (
+                    <div className="size-7 rounded-lg bg-primary/10 border border-primary/20 flex items-center justify-center text-primary shrink-0 mt-1">
+                      <Bot className="size-4" />
+                    </div>
+                  )}
+
+                  <div
+                    className={cn(
+                      "flex flex-col space-y-2 max-w-[85%]",
+                      isUser ? "items-end" : "items-start w-full"
+                    )}
+                  >
+                    {/* User Bubble */}
+                    {isUser && (
+                      <div className="px-4 py-2.5 rounded-2xl bg-primary text-primary-foreground text-sm leading-relaxed shadow-sm">
+                        {message.content}
+                      </div>
+                    )}
+
+                    {/* Assistant Content */}
+                    {!isUser && (
+                      <div className="w-full space-y-3">
+                        {/* Streaming Reasoning Block */}
+                        {showReasoning && (
+                          <div className="rounded-xl border border-amber-500/20 bg-amber-500/5 overflow-hidden text-xs">
+                            <button
+                              type="button"
+                              onClick={() => toggleReasoning(message.id)}
+                              className="w-full px-3 py-1.5 bg-amber-500/10 flex items-center justify-between text-amber-300 font-mono text-[11px] select-none hover:bg-amber-500/15 transition-colors"
+                            >
+                              <span className="flex items-center gap-1.5">
+                                <Brain className="size-3 text-amber-400" />
+                                Thought Process
+                                {message.status === "streaming" && (
+                                  <Loader2 className="size-2.5 animate-spin text-amber-400 ml-1" />
+                                )}
+                              </span>
+                              {isReasoningOpen ? (
+                                <ChevronUp className="size-3" />
+                              ) : (
+                                <ChevronDown className="size-3" />
+                              )}
+                            </button>
+                            {isReasoningOpen && (
+                              <div className="p-3 font-mono text-[11px] text-zinc-400 leading-relaxed max-h-48 overflow-y-auto whitespace-pre-wrap">
+                                {message.reasoning}
+                              </div>
+                            )}
+                          </div>
+                        )}
+
+                        {/* Tool Telemetry Badges */}
+                        {message.toolCalls && message.toolCalls.length > 0 && (
+                          <div className="flex flex-wrap gap-1.5 py-1">
+                            {message.toolCalls.map(renderToolBadge)}
+                          </div>
+                        )}
+
+                        {/* Markdown Text */}
+                        {message.content && (
+                          <div className="text-sm text-foreground leading-relaxed relative group">
+                            <Markdown>{message.content}</Markdown>
+
+                            {/* Artifact open suggestion button */}
+                            {(message.content.includes("```") || message.content.includes("<svg") || message.content.includes("mermaid")) && (
+                              <div className="pt-2">
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  onClick={() => {
+                                    const match = message.content.match(/```(html|tsx|typescript|jsx|mermaid|svg|json|markdown)\n([\s\S]*?)```/);
+                                    setActiveArtifact({
+                                      id: `art_${message.id}`,
+                                      title: "Rendered Artifact",
+                                      language: match ? match[1] : "markdown",
+                                      code: match ? match[2] : message.content,
+                                    });
+                                  }}
+                                  className="h-7 px-2 text-[11px] font-mono gap-1.5 border-primary/30 text-primary hover:bg-primary/10"
+                                >
+                                  <Code2 className="size-3" />
+                                  Open in Live Artifact Canvas
+                                </Button>
+                              </div>
+                            )}
+                          </div>
+                        )}
+
+                        {/* Streaming Indicator */}
+                        {message.status === "streaming" && !message.content && !message.reasoning && (
+                          <div className="flex items-center gap-2 text-xs text-muted-foreground font-mono">
+                            <Loader2 className="size-3 animate-spin text-primary" />
+                            <span>Hermes is thinking...</span>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+
+                  {isUser && (
+                    <div className="size-7 rounded-lg bg-muted border border-border/50 flex items-center justify-center text-muted-foreground shrink-0 mt-1">
+                      <User className="size-4" />
+                    </div>
+                  )}
+                </div>
+              );
+            })
+          )}
+
+          {/* Interactive Approval Cards */}
+          {pendingApprovals.map((approval) => (
+            <div key={approval.requestId} className="max-w-3xl mx-auto">
+              <ApprovalCard
+                approval={approval}
+                onRespond={() => {
+                  setPendingApprovals((prev) =>
+                    prev.filter((p) => p.requestId !== approval.requestId)
+                  );
+                }}
+              />
+            </div>
+          ))}
+
+          <div ref={messagesEndRef} />
+        </div>
+
+        {/* Composer Area with Pills & Annotator */}
+        <div className="p-4 border-t border-border/40 bg-card/20 backdrop-blur-md relative">
+          <div className="max-w-3xl mx-auto space-y-2">
+            {/* Context variable pill bar */}
+            <div className="flex items-center justify-between">
+              <VariablePills
+                onInsert={(variable) => {
+                  setInput((prev) => (prev ? `${prev} ${variable.insertText}` : variable.insertText));
+                  textareaRef.current?.focus();
+                }}
+              />
+
+              {/* Temporary Incognito Toggle */}
+              <button
+                type="button"
+                onClick={() => setIsTemporaryChat(!isTemporaryChat)}
+                title="Toggle Temporary Chat Mode (bypasses MEMORY.md updates & SQLite storage)"
+                className={cn(
+                  "text-[10px] font-mono px-2 py-0.5 rounded-lg border transition-all flex items-center gap-1",
+                  isTemporaryChat
+                    ? "bg-amber-500/15 border-amber-500/40 text-amber-300"
+                    : "border-border/40 text-zinc-500 hover:text-zinc-300"
+                )}
+              >
+                {isTemporaryChat ? <EyeOff className="size-3" /> : <Lock className="size-3" />}
+                {isTemporaryChat ? "Incognito ON" : "Normal Mode"}
+              </button>
+            </div>
+
+            {/* Intent clarification chips when input is empty */}
+            {messages.length === 0 && !input && (
+              <IntentClarification
+                onSelectIntent={(intent) => {
+                  setInput(intent.prefix);
+                  textareaRef.current?.focus();
+                }}
+              />
+            )}
+
+            {/* Slash command autocomplete overlay */}
+            {showSlashMenu && (
+              <div className="absolute bottom-24 left-4 right-4 max-w-3xl mx-auto z-20 rounded-2xl border border-primary/30 bg-card/95 backdrop-blur-md shadow-2xl p-2 max-h-60 overflow-y-auto">
+                <div className="text-[10px] font-mono text-zinc-400 px-3 py-1 border-b border-border/30">
+                  Hermes Native Slash Commands
+                </div>
+                {filteredSlashCommands.map((sc) => (
+                  <button
+                    key={sc.command}
+                    onClick={() => {
+                      if (sc.action.startsWith("nav:")) {
+                        window.location.href = sc.action.slice(4);
+                      } else if (sc.action === "terminal") {
+                        setViewMode("terminal");
+                        setInput("");
+                        setShowSlashMenu(false);
+                      } else if (sc.action === "clear") {
+                        setMessages([]);
+                        setInput("");
+                        setShowSlashMenu(false);
+                      } else {
+                        setInput(sc.command + " ");
+                        setShowSlashMenu(false);
+                        textareaRef.current?.focus();
+                      }
+                    }}
+                    className="w-full text-left px-3 py-2 rounded-xl hover:bg-primary/10 hover:text-primary transition-colors flex items-center justify-between text-xs font-mono"
+                  >
+                    <span className="font-bold text-foreground">{sc.command}</span>
+                    <span className="text-[11px] text-muted-foreground">{sc.desc}</span>
+                  </button>
+                ))}
+              </div>
+            )}
+
+            {/* Input Box */}
+            <div className="relative rounded-2xl border border-border/60 bg-background/80 focus-within:border-primary/50 transition-all shadow-lg overflow-hidden">
+              <textarea
+                ref={textareaRef}
+                rows={1}
+                value={input}
+                disabled={connectionState !== "open" && connectionState !== "connecting"}
+                onChange={handleInputChange}
+                onKeyDown={handleKeyDown}
+                placeholder={
+                  connectionState === "open"
+                    ? "Type / for slash commands, # for variables, or message Hermes... (Enter to send)"
+                    : "Connecting to Hermes Gateway..."
+                }
+                className="w-full px-4 pt-3.5 pb-12 bg-transparent text-sm text-foreground resize-none focus:outline-none placeholder:text-muted-foreground"
+              />
+
+              <div className="absolute left-3 bottom-2.5 flex items-center gap-1.5 text-muted-foreground">
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept="image/*"
+                  onChange={handleImageUpload}
+                  className="hidden"
+                />
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={() => fileInputRef.current?.click()}
+                  title="Upload screenshot to annotate with bounding boxes"
+                  className="size-7 rounded-lg text-zinc-400 hover:text-foreground"
+                >
+                  <ImageIcon className="size-4" />
+                </Button>
+
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={() => setIsVoiceOpen(true)}
+                  title="Live Voice Chat & Waveform Visualizer"
+                  className="size-7 rounded-lg text-zinc-400 hover:text-primary"
+                >
+                  <Mic className="size-4" />
+                </Button>
+
+                <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-muted/60 text-zinc-400 ml-1">
+                  RPC 2.0
+                </span>
+              </div>
+
+              <div className="absolute right-3 bottom-2.5 flex items-center gap-2">
+                <Button
+                  size="icon"
+                  disabled={!input.trim() || isStreaming || connectionState !== "open"}
+                  onClick={() => handleSendMessage()}
+                  className="size-8 rounded-xl bg-primary hover:bg-primary/90 text-primary-foreground shadow-sm transition-transform active:scale-95"
+                >
+                  {isStreaming ? (
+                    <Loader2 className="size-4 animate-spin" />
+                  ) : (
+                    <Send className="size-4" />
+                  )}
+                </Button>
+              </div>
+            </div>
+
+            <p className="text-[10px] text-center text-muted-foreground">
+              GlyteOS Hermes · Enterprise AI OS Client by GlyteTech · RPC & Tool Approvals Active
+            </p>
+          </div>
+        </div>
+      </div>
+
+      {/* Split Terminal View Right Pane */}
+      {viewMode === "split" && (
+        <div className="w-1/2 h-full bg-[#090d16]">
+          <TerminalView
+            isSplitView={true}
+            onToggleSplit={() => setViewMode("chat")}
+            onClose={() => setViewMode("chat")}
+          />
+        </div>
+      )}
+
+      {/* Full Terminal / TUI View */}
+      {viewMode === "terminal" && (
+        <div className="w-full h-full bg-[#090d16]">
+          <TerminalView
+            isSplitView={false}
+            onToggleSplit={() => setViewMode("split")}
+            onClose={() => setViewMode("chat")}
+          />
+        </div>
+      )}
+
+      {/* Dockable Live Markdown Artifact Canvas */}
+      {activeArtifact && (
+        <ArtifactCanvas
+          artifact={activeArtifact}
+          onClose={() => setActiveArtifact(null)}
+          className="border-l border-border/40 shadow-2xl"
+        />
+      )}
+
+      {/* Visual Context Annotator Modal */}
+      {annotatingImageUrl && (
+        <VisualAnnotator
+          imageUrl={annotatingImageUrl}
+          onSave={handleSaveAnnotations}
+          onCancel={() => setAnnotatingImageUrl(null)}
+        />
+      )}
+
+      {/* Live Voice Chat Modal */}
+      <VoiceChatModal
+        isOpen={isVoiceOpen}
+        onClose={() => setIsVoiceOpen(false)}
+        onSendTranscript={(transcriptText) => {
+          handleSendMessage(transcriptText);
+        }}
+      />
+    </div>
+  );
+}
