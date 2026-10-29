@@ -7,6 +7,7 @@ import {
   getGatewayClient,
   HermesMessage,
   HermesToolCall,
+  TextAttachment,
 } from "@/lib/hermes/gateway-client";
 import { ApprovalCard } from "@/components/chat/ApprovalCard";
 import { Markdown } from "@/components/markdown";
@@ -33,6 +34,9 @@ import {
   FolderKanban,
   Users,
   Search,
+  FileText,
+  Copy,
+  Check,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -97,6 +101,41 @@ export default function ChatBot({ threadId, initialMessages = [] }: ChatBotProps
   // Modals
   const [isVoiceOpen, setIsVoiceOpen] = useState(false);
   const [annotatingImageUrl, setAnnotatingImageUrl] = useState<string | null>(null);
+
+  // Large pasted text attachments & previews
+  const [attachments, setAttachments] = useState<TextAttachment[]>([]);
+  const [previewAttachment, setPreviewAttachment] = useState<TextAttachment | null>(null);
+  const [expandedAttachmentIds, setExpandedAttachmentIds] = useState<Record<string, boolean>>({});
+  const [copiedAttachmentId, setCopiedAttachmentId] = useState<string | null>(null);
+
+  // Handle large text paste: convert into a neat .txt attachment chip
+  const handlePaste = (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
+    const text = e.clipboardData.getData("text");
+    if (!text) return;
+
+    const lines = text.split("\n");
+    // If text is longer than 300 characters OR contains 5 or more lines
+    if (text.length > 300 || lines.length >= 5) {
+      e.preventDefault();
+
+      let ext = "txt";
+      if (text.includes("import ") || text.includes("export ") || text.includes("function ") || text.includes("const ")) ext = "ts";
+      else if (text.includes("<html") || text.includes("<div") || text.includes("className=")) ext = "tsx";
+      else if (text.includes("SELECT ") || text.includes("CREATE TABLE")) ext = "sql";
+      else if (text.trim().startsWith("{") && text.trim().endsWith("}")) ext = "json";
+      else if (text.includes("error:") || text.includes("Exception:") || text.includes("Traceback")) ext = "log";
+
+      const newAttachment: TextAttachment = {
+        id: `att_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+        name: `pasted-text-${attachments.length + 1}.${ext}`,
+        content: text,
+        lineCount: lines.length,
+        sizeKB: `${(text.length / 1024).toFixed(1)} KB`,
+      };
+
+      setAttachments((prev) => [...prev, newAttachment]);
+    }
+  };
 
   // Slash commands dropdown
   const [showSlashMenu, setShowSlashMenu] = useState(false);
@@ -351,7 +390,7 @@ export default function ChatBot({ threadId, initialMessages = [] }: ChatBotProps
   // Handle message submit
   const handleSendMessage = async (customText?: string) => {
     const text = (customText || input).trim();
-    if (!text || isStreaming) return;
+    if ((!text && attachments.length === 0) || isStreaming) return;
 
     // Intercept client slash commands
     if (text.startsWith("/")) {
@@ -359,6 +398,7 @@ export default function ChatBot({ threadId, initialMessages = [] }: ChatBotProps
       if (cmd === "/clear") {
         setMessages([]);
         setInput("");
+        setAttachments([]);
         return;
       }
       if (cmd === "/workspace") {
@@ -397,7 +437,18 @@ export default function ChatBot({ threadId, initialMessages = [] }: ChatBotProps
       }
     }
 
+    // Build payload: user prompt + attached text documents
+    let payloadText = text;
+    if (attachments.length > 0) {
+      const attachmentsBlock = attachments
+        .map((a) => `\n\n--- [Attached Document: ${a.name} (${a.lineCount} lines)] ---\n${a.content}`)
+        .join("\n");
+      payloadText = text ? `${text}\n${attachmentsBlock}` : `Attached context:\n${attachmentsBlock}`;
+    }
+
+    const currentAttachments = [...attachments];
     setInput("");
+    setAttachments([]);
     setShowSlashMenu(false);
     if (textareaRef.current) {
       textareaRef.current.style.height = "auto";
@@ -406,7 +457,8 @@ export default function ChatBot({ threadId, initialMessages = [] }: ChatBotProps
     const userMsg: HermesMessage = {
       id: `user_${Date.now()}`,
       role: "user",
-      content: text,
+      content: text || (currentAttachments.length > 0 ? `Attached context (${currentAttachments[0].name})` : ""),
+      attachments: currentAttachments,
       createdAt: Date.now(),
     };
 
@@ -423,13 +475,13 @@ export default function ChatBot({ threadId, initialMessages = [] }: ChatBotProps
 
     try {
       const client = getGatewayClient();
-      const payloadText = isTemporaryChat
-        ? `[SYSTEM: TEMPORARY_INCOGNITO_MODE=TRUE - Do not write to MEMORY.md, do not persist to SQLite session db, block scheduled cron jobs]\n\n${text}`
-        : text;
+      const finalPayload = isTemporaryChat
+        ? `[SYSTEM: TEMPORARY_INCOGNITO_MODE=TRUE - Do not write to MEMORY.md, do not persist to SQLite session db, block scheduled cron jobs]\n\n${payloadText}`
+        : payloadText;
 
-      await client.sendMessage(threadId, payloadText);
+      await client.sendMessage(threadId, finalPayload);
     } catch (err: any) {
-      console.error("Failed to send message to Hermes Gateway:", err);
+      console.warn("Failed to send message to Hermes Gateway:", err?.message || err);
       setIsStreaming(false);
       setMessages((prev) => {
         const last = prev[prev.length - 1];
@@ -438,7 +490,7 @@ export default function ChatBot({ threadId, initialMessages = [] }: ChatBotProps
             ...prev.slice(0, -1),
             {
               ...last,
-              content: `Error connecting to Hermes Gateway: ${err?.message || "Connection refused"}`,
+              content: `⚠️ **Gateway WebSocket Not Connected**\n\n${err?.message || "Could not dispatch message to the Hermes Gateway."}\n\n**To start your local Hermes gateway:**\n\`\`\`bash\nhermes gateway --port 9119\n\`\`\`\n*Ensure port 9119 is running and click **[Reconnect Gateway]** below.*`,
               status: "error",
             },
           ];
@@ -788,8 +840,72 @@ export default function ChatBot({ threadId, initialMessages = [] }: ChatBotProps
                   >
                     {/* User Bubble */}
                     {isUser && (
-                      <div className="px-4 py-2.5 rounded-2xl bg-primary text-primary-foreground text-sm leading-relaxed shadow-sm">
-                        {message.content}
+                      <div className="space-y-2 max-w-full">
+                        {message.content && (
+                          <div className="px-4 py-2.5 rounded-2xl bg-primary text-primary-foreground text-sm leading-relaxed shadow-sm">
+                            {message.content}
+                          </div>
+                        )}
+
+                        {/* Collapsible Attached Text Documents */}
+                        {message.attachments && message.attachments.length > 0 && (
+                          <div className="space-y-1.5 w-full">
+                            {message.attachments.map((att) => {
+                              const isExpanded = expandedAttachmentIds[att.id] ?? false;
+                              const isCopied = copiedAttachmentId === att.id;
+
+                              return (
+                                <div
+                                  key={att.id}
+                                  className="rounded-xl border border-primary/20 bg-card/70 backdrop-blur-sm p-2.5 space-y-2 text-xs shadow-sm"
+                                >
+                                  <div className="flex items-center justify-between gap-3">
+                                    <div className="flex items-center gap-2">
+                                      <div className="p-1 rounded-md bg-primary/10 text-primary">
+                                        <FileText className="size-3.5" />
+                                      </div>
+                                      <span className="font-mono font-medium text-foreground">{att.name}</span>
+                                      <span className="text-[10px] text-muted-foreground font-mono">
+                                        ({att.lineCount} lines · {att.sizeKB})
+                                      </span>
+                                    </div>
+
+                                    <button
+                                      type="button"
+                                      onClick={() =>
+                                        setExpandedAttachmentIds((prev) => ({
+                                          ...prev,
+                                          [att.id]: !prev[att.id],
+                                        }))
+                                      }
+                                      className="text-[11px] font-mono text-primary hover:underline"
+                                    >
+                                      {isExpanded ? "Hide Text" : "View Text"}
+                                    </button>
+                                  </div>
+
+                                  {isExpanded && (
+                                    <div className="relative mt-2 p-2.5 rounded-lg bg-zinc-950/90 border border-border/40 font-mono text-xs text-zinc-300 max-h-60 overflow-y-auto whitespace-pre-wrap select-text">
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          navigator.clipboard.writeText(att.content);
+                                          setCopiedAttachmentId(att.id);
+                                          setTimeout(() => setCopiedAttachmentId(null), 2000);
+                                        }}
+                                        className="absolute top-2 right-2 flex items-center gap-1 px-2 py-0.5 rounded bg-muted/80 text-[10px] text-zinc-300 hover:text-foreground border border-border/40"
+                                      >
+                                        {isCopied ? <Check className="size-2.5 text-emerald-400" /> : <Copy className="size-2.5" />}
+                                        <span>{isCopied ? "Copied" : "Copy"}</span>
+                                      </button>
+                                      {att.content}
+                                    </div>
+                                  )}
+                                </div>
+                              );
+                            })}
+                          </div>
+                        )}
                       </div>
                     )}
 
@@ -971,6 +1087,39 @@ export default function ChatBot({ threadId, initialMessages = [] }: ChatBotProps
 
             {/* Input Box with subtle neon border */}
             <div className="relative rounded-2xl border border-border/60 bg-background/80 focus-within:border-primary/60 focus-within:shadow-[0_0_20px_rgba(99,102,241,0.15)] transition-all shadow-lg overflow-hidden">
+              {/* Attached Pasted Text Chips */}
+              {attachments.length > 0 && (
+                <div className="flex flex-wrap gap-2 px-3 pt-2.5 pb-2 border-b border-border/40 bg-muted/20">
+                  {attachments.map((att) => (
+                    <div
+                      key={att.id}
+                      className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-card/90 border border-primary/30 text-xs shadow-sm"
+                    >
+                      <FileText className="size-3.5 text-primary" />
+                      <span className="font-mono font-medium text-foreground text-[11px]">{att.name}</span>
+                      <span className="text-[10px] text-muted-foreground font-mono">
+                        ({att.lineCount} lines · {att.sizeKB})
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => setPreviewAttachment(att)}
+                        className="text-[10px] font-mono text-primary hover:underline ml-1"
+                      >
+                        View
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setAttachments((prev) => prev.filter((a) => a.id !== att.id))}
+                        className="text-muted-foreground hover:text-rose-400 p-0.5 ml-0.5"
+                        title="Remove attachment"
+                      >
+                        <X className="size-3" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+
               <textarea
                 ref={textareaRef}
                 rows={1}
@@ -978,9 +1127,10 @@ export default function ChatBot({ threadId, initialMessages = [] }: ChatBotProps
                 disabled={connectionState !== "open" && connectionState !== "connecting"}
                 onChange={handleInputChange}
                 onKeyDown={handleKeyDown}
+                onPaste={handlePaste}
                 placeholder={
                   connectionState === "open"
-                    ? "Message Hermes Agent... (Type / for slash commands, # for variables)"
+                    ? "Message Hermes Agent... (Type / for commands, or paste large logs/prompts to attach as .txt)"
                     : "Connecting to Hermes Gateway..."
                 }
                 className="w-full px-4 pt-3.5 pb-12 bg-transparent text-sm text-foreground resize-none focus:outline-none placeholder:text-muted-foreground"
@@ -1022,7 +1172,7 @@ export default function ChatBot({ threadId, initialMessages = [] }: ChatBotProps
               <div className="absolute right-3 bottom-2.5 flex items-center gap-2">
                 <Button
                   size="icon"
-                  disabled={!input.trim() || isStreaming || connectionState !== "open"}
+                  disabled={(!input.trim() && attachments.length === 0) || isStreaming || (connectionState !== "open" && connectionState !== "connecting")}
                   onClick={() => handleSendMessage()}
                   className="size-8 rounded-xl bg-primary hover:bg-primary/90 text-primary-foreground shadow-sm transition-transform active:scale-95"
                 >
@@ -1140,6 +1290,66 @@ export default function ChatBot({ threadId, initialMessages = [] }: ChatBotProps
           handleSendMessage(transcriptText);
         }}
       />
+
+      {/* Large Text Attachment Preview Modal */}
+      {previewAttachment && (
+        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center p-4 animate-in fade-in">
+          <div className="w-full max-w-4xl max-h-[85vh] flex flex-col bg-[#0b0f19] border border-blue-500/30 rounded-2xl shadow-2xl overflow-hidden">
+            <div className="flex items-center justify-between px-5 py-4 border-b border-border/40 bg-card/60">
+              <div className="flex items-center gap-3">
+                <div className="w-9 h-9 rounded-xl bg-blue-500/10 border border-blue-500/20 flex items-center justify-center text-blue-400">
+                  <FileText className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-semibold text-foreground flex items-center gap-2">
+                    {previewAttachment.name}
+                    <Badge variant="outline" className="text-[10px] text-blue-400 border-blue-500/30">
+                      {previewAttachment.sizeKB}
+                    </Badge>
+                  </h3>
+                  <p className="text-xs text-muted-foreground">{previewAttachment.lineCount} lines document preview</p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="h-8 gap-1.5 text-xs text-muted-foreground hover:text-foreground"
+                  onClick={() => {
+                    navigator.clipboard.writeText(previewAttachment.content);
+                    setCopiedAttachmentId(previewAttachment.id);
+                    setTimeout(() => setCopiedAttachmentId(null), 2000);
+                  }}
+                >
+                  {copiedAttachmentId === previewAttachment.id ? (
+                    <>
+                      <Check className="w-3.5 h-3.5 text-emerald-400" />
+                      <span>Copied</span>
+                    </>
+                  ) : (
+                    <>
+                      <Copy className="w-3.5 h-3.5" />
+                      <span>Copy All</span>
+                    </>
+                  )}
+                </Button>
+                <Button
+                  size="icon"
+                  variant="ghost"
+                  className="h-8 w-8 text-muted-foreground hover:text-foreground"
+                  onClick={() => setPreviewAttachment(null)}
+                >
+                  <X className="w-4 h-4" />
+                </Button>
+              </div>
+            </div>
+            <div className="flex-1 overflow-auto p-4 font-mono text-xs text-muted-foreground/90 bg-black/40 leading-relaxed select-text whitespace-pre">
+              {previewAttachment.content}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
+

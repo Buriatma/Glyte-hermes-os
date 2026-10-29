@@ -21,6 +21,14 @@ export interface HermesToolCall {
   endTime?: number;
 }
 
+export interface TextAttachment {
+  id: string;
+  name: string;
+  content: string;
+  lineCount: number;
+  sizeKB: string;
+}
+
 export interface HermesMessage {
   id: string;
   role: "user" | "assistant" | "system" | "tool";
@@ -28,6 +36,7 @@ export interface HermesMessage {
   reasoning?: string;
   toolCalls?: HermesToolCall[];
   status?: "pending" | "streaming" | "complete" | "error";
+  attachments?: TextAttachment[];
   createdAt: number;
 }
 
@@ -452,9 +461,38 @@ class GatewayClient {
     }
   }
 
-  public request<T = any>(method: string, params: Record<string, unknown> = {}, timeoutMs = 30000): Promise<T> {
+  public async request<T = any>(method: string, params: Record<string, unknown> = {}, timeoutMs = 30000): Promise<T> {
+    // If not open, wait or attempt to connect
     if (!this.socket || this.socket.readyState !== WebSocket.OPEN) {
-      return Promise.reject(new Error(`Cannot call ${method}: Gateway WebSocket not connected`));
+      if (this.socket && this.socket.readyState === WebSocket.CONNECTING) {
+        // Wait up to 4s for existing connection attempt to open
+        await new Promise<void>((resolve, reject) => {
+          const check = setInterval(() => {
+            if (this.socket?.readyState === WebSocket.OPEN) {
+              clearInterval(check);
+              resolve();
+            } else if (!this.socket || this.socket.readyState === WebSocket.CLOSED) {
+              clearInterval(check);
+              reject(new Error(`WebSocket connection closed to ${this.gatewayUrl}`));
+            }
+          }, 100);
+          setTimeout(() => {
+            clearInterval(check);
+            reject(new Error(`Gateway connection pending. Ensure Hermes daemon is running at ${this.gatewayUrl}`));
+          }, 4000);
+        });
+      } else {
+        // Attempt fresh connect
+        try {
+          await this.connect();
+        } catch {
+          throw new Error(`Cannot reach Hermes Gateway at ${this.gatewayUrl}. Please verify the daemon is running with 'hermes gateway --port 9119'.`);
+        }
+      }
+    }
+
+    if (!this.socket || this.socket.readyState !== WebSocket.OPEN) {
+      throw new Error(`Cannot call ${method}: Gateway WebSocket not connected. Run 'hermes gateway --port 9119' to start daemon.`);
     }
 
     const id = `req_${this.nextRequestId++}`;
