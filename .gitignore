@@ -1,0 +1,23 @@
+# Dependencies
+node_modules/
+.pnpm-store/
+
+# Next.js build
+target-ui/.next/
+target-ui/out/
+.next/
+out/
+
+# Environment files
+*.env.local
+*.env
+target-ui/.env.local
+target-ui/.env
+
+# Large reference directory
+hermes-core/
+
+# OS and IDE files
+.DS_Store
+*.log
+.claude/

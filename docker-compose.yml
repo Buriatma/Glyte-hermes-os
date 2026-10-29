@@ -1,0 +1,31 @@
+version: "3.9"
+
+services:
+  glyte-hermes-os:
+    build:
+      context: ./target-ui
+      dockerfile: Dockerfile
+    container_name: glyte-hermes-os
+    restart: unless-stopped
+    ports:
+      - "4000:4000"
+    environment:
+      - NODE_ENV=production
+      - PORT=4000
+      - HOSTNAME=0.0.0.0
+      - HERMES_GATEWAY_URL=ws://host.docker.internal:9119
+      - HERMES_WEBUI_PASSWORD=admin
+      - HERMES_WORKSPACE_PATH=/workspace
+      - HERMES_ENV_PATH=/root/.hermes/.env
+    volumes:
+      - .:/workspace
+      - ${HOME}/.hermes:/root/.hermes
+      - ./target-ui/.env.local:/app/.env.local:ro
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:4000/sign-in || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
