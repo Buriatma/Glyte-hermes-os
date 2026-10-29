@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ApprovalRequestPayload,
   ConnectionState,
@@ -37,6 +37,7 @@ import {
   FileText,
   Copy,
   Check,
+  HardDrive,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -107,6 +108,29 @@ export default function ChatBot({ threadId, initialMessages = [] }: ChatBotProps
   const [previewAttachment, setPreviewAttachment] = useState<TextAttachment | null>(null);
   const [expandedAttachmentIds, setExpandedAttachmentIds] = useState<Record<string, boolean>>({});
   const [copiedAttachmentId, setCopiedAttachmentId] = useState<string | null>(null);
+
+  // Hermes 3 Sovereign Context Limit (128,000 tokens)
+  const CONTEXT_LIMIT = 128000;
+  const totalTokens = useMemo(() => {
+    let charCount = 0;
+    for (const msg of messages) {
+      charCount += (msg.content?.length || 0);
+      if (msg.reasoning) charCount += msg.reasoning.length;
+      if (msg.attachments) {
+        for (const att of msg.attachments) {
+          charCount += (att.content?.length || 0);
+        }
+      }
+    }
+    charCount += input.length;
+    for (const att of attachments) {
+      charCount += att.content.length;
+    }
+    // Baseline prompt overhead + ~3.8 chars per token
+    return Math.max(450, Math.round(charCount / 3.8) + (messages.length > 0 ? 1150 : 0));
+  }, [messages, input, attachments]);
+
+  const contextPercent = Math.min(100, Math.round((totalTokens / CONTEXT_LIMIT) * 100));
 
   // Handle large text paste: convert into a neat .txt attachment chip
   const handlePaste = (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
@@ -655,6 +679,25 @@ export default function ChatBot({ threadId, initialMessages = [] }: ChatBotProps
           </div>
 
           <div className="flex items-center gap-1.5">
+            {/* Top Bar Context Window Counter */}
+            <div
+              onClick={() => appStore.getState().mutate({ openUserSettings: true, userSettingsTab: "resources" })}
+              className="hidden sm:flex items-center gap-1.5 px-2 py-1 rounded-lg bg-card/60 border border-border/40 text-[10px] font-mono cursor-pointer hover:border-primary/40 transition-colors"
+              title="Hermes Context Window Usage - Click to open Resource Manager"
+            >
+              <HardDrive className={cn("size-3", contextPercent > 80 ? "text-rose-400" : contextPercent > 50 ? "text-amber-400" : "text-cyan-400")} />
+              <span className="text-zinc-400">Context:</span>
+              <span className="text-foreground font-semibold">
+                {totalTokens >= 1000 ? `${(totalTokens / 1000).toFixed(1)}k` : totalTokens} / 128k
+              </span>
+              <div className="w-12 h-1 bg-muted rounded-full overflow-hidden ml-0.5">
+                <div
+                  className={cn("h-full rounded-full transition-all duration-300", contextPercent > 80 ? "bg-rose-500" : contextPercent > 50 ? "bg-amber-500" : "bg-cyan-500")}
+                  style={{ width: `${Math.max(3, contextPercent)}%` }}
+                />
+              </div>
+            </div>
+
             {/* Gateway & Agent Logs */}
             <Button
               variant="outline"
@@ -1189,9 +1232,38 @@ export default function ChatBot({ threadId, initialMessages = [] }: ChatBotProps
                   <Mic className="size-4" />
                 </Button>
 
-                <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-muted/60 text-zinc-400 ml-1">
+                <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-muted/60 text-zinc-400 ml-1 hidden sm:inline">
                   JSON-RPC 2.0
                 </span>
+
+                {/* Real-time Context Window Bar in Chat Composer */}
+                <div
+                  onClick={() => appStore.getState().mutate({ openUserSettings: true, userSettingsTab: "resources" })}
+                  className="flex items-center gap-1.5 px-2 py-0.5 rounded-lg bg-card/80 border border-border/50 text-[10px] font-mono cursor-pointer hover:border-primary/40 transition-all ml-1 group"
+                  title="Hermes 3 Context Limit: 128,000 tokens. Click to view Resource Manager."
+                >
+                  <HardDrive className={cn("size-3", contextPercent > 80 ? "text-rose-400" : contextPercent > 50 ? "text-amber-400" : "text-cyan-400")} />
+                  <span className="text-zinc-400 group-hover:text-foreground hidden md:inline">Context:</span>
+                  <span className="font-semibold text-foreground">
+                    {totalTokens >= 1000 ? `${(totalTokens / 1000).toFixed(1)}k` : totalTokens}
+                  </span>
+                  <span className="text-zinc-500">/ 128k</span>
+                  <div className="w-12 sm:w-16 h-1.5 bg-muted/80 rounded-full overflow-hidden ml-0.5">
+                    <div
+                      className={cn(
+                        "h-full rounded-full transition-all duration-300",
+                        contextPercent > 80 ? "bg-rose-500" : contextPercent > 50 ? "bg-amber-500" : "bg-cyan-500"
+                      )}
+                      style={{ width: `${Math.max(4, contextPercent)}%` }}
+                    />
+                  </div>
+                  <span className={cn(
+                    "text-[9px] font-bold",
+                    contextPercent > 80 ? "text-rose-400" : contextPercent > 50 ? "text-amber-400" : "text-cyan-400"
+                  )}>
+                    {contextPercent}%
+                  </span>
+                </div>
               </div>
 
               <div className="absolute right-3 bottom-2.5 flex items-center gap-2">
