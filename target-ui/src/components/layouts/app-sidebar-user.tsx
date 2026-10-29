@@ -140,7 +140,7 @@ export function AppSidebarUserInner(props: {
             <DropdownMenuItem
               onClick={() => {
                 window.open(
-                  "https://github.com/keshavsharma/Glyte-hermes-os/issues",
+                  "https://github.com/Buriatma/Glyte-hermes-os/issues",
                   "_blank",
                 );
               }}

@@ -33,7 +33,7 @@ graph TD
 
 1. **Clone the Repository**:
    ```bash
-   git clone https://github.com/keshavsharma/Glyte-hermes-os.git
+   git clone https://github.com/Buriatma/Glyte-hermes-os.git
    cd Glyte-hermes-os
    ```
 

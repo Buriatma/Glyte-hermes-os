@@ -129,7 +129,7 @@ By applying **REA (Reverse Engineer Anything)** methodology to modern chatbot fo
 
 ```bash
 # 1. Clone repository
-git clone https://github.com/keshavsharma/Glyte-hermes-os.git
+git clone https://github.com/Buriatma/Glyte-hermes-os.git
 cd Glyte-hermes-os
 
 # 2. Start container

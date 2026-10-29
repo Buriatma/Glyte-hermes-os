@@ -3,9 +3,10 @@
 # ⚡ GlyteOS Hermes
 
 ### Next-Gen Autonomous AI Operating System Client & Gateway Interface
-**A 100% Complete, Sovereign Replacement for the Official Hermes WebUI**
+**A 100% Sovereign, Feature-Rich Replacement for the Official Hermes WebUI**
 
 [![Built by GlyteTech](https://img.shields.io/badge/Crafted%20by-GlyteTech-6366f1?style=for-the-badge&logo=shield)](https://glyte.tech)
+[![GitHub Repo](https://img.shields.io/badge/GitHub-Buriatma%2FGlyte--hermes--os-181717?style=for-the-badge&logo=github)](https://github.com/Buriatma/Glyte-hermes-os)
 [![Next.js 16](https://img.shields.io/badge/Next.js-16.1.6-black?style=for-the-badge&logo=next.js)](https://nextjs.org/)
 [![Turbopack](https://img.shields.io/badge/Bundler-Turbopack-000?style=for-the-badge&logo=vercel)](https://turbo.build/)
 [![JSON-RPC 2.0](https://img.shields.io/badge/Protocol-JSON--RPC%202.0-emerald?style=for-the-badge)](https://www.jsonrpc.org/)
@@ -21,28 +22,54 @@
 
 ## 🌌 Overview
 
-**GlyteOS Hermes** is an enterprise-grade AI OS Client built from the ground up by **GlyteTech** as a full sovereign replacement for the official Nous Research Hermes WebUI. 
+**GlyteOS Hermes** is an enterprise-grade AI Operating System client crafted by **[GlyteTech](https://glyte.tech)** as a sovereign, state-of-the-art replacement for the official Nous Research Hermes WebUI.
 
-By applying **REA (Reverse Engineer Anything)** methodology to modern chatbot foundations, all external cloud database dependencies (PostgreSQL, Drizzle), external OAuth providers, Redis, and Vercel AI SDK wrappers have been eliminated. The client connects directly to self-hosted Hermes OS Gateway daemons via high-performance JSON-RPC 2.0 WebSockets.
+By applying **REA (Reverse Engineer Anything)** methodology to modern chatbot foundations, all external cloud database dependencies (PostgreSQL, Drizzle), external OAuth providers, Redis, and Vercel AI SDK wrappers have been completely eliminated. 
+
+The client communicates directly with your self-hosted Hermes OS Gateway daemon via high-speed, bidirectional JSON-RPC 2.0 WebSockets (`ws://127.0.0.1:9119`).
+
+---
+
+## ⚡ Quickstart
+
+### 1. ⚡ 1-Command Autonomous Terminal Installer
+Run this single command in your terminal to automatically detect dependencies, generate configuration, build, and launch GlyteOS Hermes on port `4000`:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/Buriatma/Glyte-hermes-os/main/install.sh | bash
+```
+
+---
+
+### 2. 🤖 1-Prompt Autonomous Install for Hermes Agent
+Already running Hermes CLI (`hermes`)? Copy and paste this prompt directly into your agent session:
+
+```text
+Install and launch the GlyteOS Hermes WebUI client for me:
+1. Run: curl -fsSL https://raw.githubusercontent.com/Buriatma/Glyte-hermes-os/main/install.sh | bash
+2. Confirm the client is running on http://localhost:4000 and connected to our gateway on ws://127.0.0.1:9119.
+```
+
+*(Alternatively, ask your agent: `git clone https://github.com/Buriatma/Glyte-hermes-os.git ~/.glyte-hermes-os && cd ~/.glyte-hermes-os && ./install.sh`)*
 
 ---
 
 ## 📊 Feature Comparison Matrix
 
-| Feature | ⚡ GlyteOS Hermes | 🐢 Vanilla Hermes WebUI | 💬 ChatGPT / Claude |
+| Capability | ⚡ GlyteOS Hermes | 🐢 Vanilla Hermes WebUI | 💬 ChatGPT / Claude |
 | :--- | :---: | :---: | :---: |
 | **Aesthetic / Theme** | **ChatGPT/Gemini Hybrid Glassmorphism** | Basic Tailwind | Standard Web |
 | **Gateway Protocol** | **Native JSON-RPC 2.0 WebSockets** | Basic HTTP/SSE | Proprietary Cloud API |
 | **External DB Requirement** | **None (Zero DB / Sovereign)** | SQLite only | Closed Multi-Tenant Cloud |
+| **Right-Sidebar Workspace** | **Live Tree + Syntax Code + Git Diff + Raw Download** | No | No |
+| **Official Skills Catalog** | **950+ Built-in Official Skills & Plugins** | Static list | No |
 | **In-Stream Human Approvals** | **Interactive Diff + 1-Click Approve/Reject** | Terminal Prompt | N/A |
 | **In-Browser Terminal & TUI** | **Embedded xterm.js (Split & Full View)** | No | No |
 | **Visual Context Annotator** | **Bounding Boxes & Coordinate Pins** | No | Basic crop only |
 | **Dynamic Context Variable Pills**| **`#workspace-file`, `#git-diff`, `#recent-error`** | No | No |
-| **Intent Clarification Cards**| **1-Click Chips (`[Fix Bug]`, `[Refactor]`)** | No | Suggestions only |
 | **Live Markdown Artifact Canvas**| **Interactive Preview (HTML, SVG, Mermaid)** | No | Limited Canvas |
 | **Swarm & Subagent Visualizer** | **Parent-Child Hierarchy Tree (`delegate_task`)** | No | No |
 | **OpenClaw Secret Vault** | **`~/.hermes/.env` UI + Masking + Live Tests** | Plain text edit | Third-party only |
-| **Workspace Explorer & Git Diff** | **Directory Tree + 1-Click Raw Download** | No | No |
 | **Live Voice Chat & Waveform** | **Web Audio API + Hands-Free Auto-Send** | Voice only | Audio mode |
 | **Temporary Incognito Mode** | **Bypasses MEMORY.md & session persistence** | No | Temporary chat |
 
@@ -75,74 +102,66 @@ By applying **REA (Reverse Engineer Anything)** methodology to modern chatbot fo
 
 ## 🚀 Key Modules & Capabilities
 
-### 1. Intelligent UI: Context Bridge
-- **Visual Context Annotator**: Upload screenshots or paste images, draw bounding boxes, and drop numbered coordinate pins to give vision models pinpoint visual context.
-- **Intent Clarification Cards**: One-click contextual chips (`[Fix Bug]`, `[Refactor]`, `[Write Tests]`, `[Explain Code]`, `[Optimize]`, `[Security Audit]`) to instantly sharpen instructions.
-- **Dynamic Variable Pill Bar**: Fast chips (`#workspace-file`, `#git-diff`, `#recent-error`, `#active-skill`, `#tree`, `#last-command`) inserted directly into prompt composer.
-- **Live Markdown Artifact Canvas**: Dedicated right-hand dockable canvas with Preview and Code tabs for HTML, SVG, Mermaid diagrams, and formatted markdown documentation.
+### 1. Right-Sidebar Workspace Explorer
+- Dockable panel on the right side of the chat interface.
+- Live workspace file tree with instant search filtering.
+- Syntax-highlighted code inspector and unified git diff viewer (`+` additions in emerald, `-` deletions in rose).
+- 1-click raw download generator (`/api/workspace/raw?path=...&download=1`).
 
-### 2. Hermes Native Gateway & Streaming
-- Persistent WebSocket client connecting directly to `HERMES_GATEWAY_URL` (`ws://127.0.0.1:9119` or `8787`).
-- Real-time token streaming with collapsible thought process / reasoning blocks.
-- Dynamic tool telemetry badges displaying live progress:
-  - `[Running: terminal("git status")]`
-  - `[web_search: "latest nextjs docs"]`
-  - `[read_file: "package.json"]`
+### 2. Official 950+ Skills & Plugins Catalog
+- Complete official skills catalog compiled directly from Nous Research Hermes Agent.
+- **44 Core Skills**: `systematic-debugging`, `test-driven-development`, `codebase-inspection`, `requesting-code-review`, `simplify-code`, `spike`, `sdlc-review`, `arxiv`, `grounded-citations`, `apple-notes`, `imessage`, etc.
+- **910 Official Plugins**: `artifacts`, `hermes-workbench`, `qdrant`, `quota`, `chronicle`, `tripwire`, `nexus`, etc.
+- In-UI markdown & YAML inspector with instant save-to-user capability (`~/.hermes/skills/`).
 
 ### 3. Human-In-The-Loop Interactive Approvals
 - In-stream cards intercepting Hermes RPC `approval_request` events for sensitive tools (`terminal`, `patch`, `write_file`, `cronjob`).
-- Unified diff viewer with syntax highlighting (additions in emerald, deletions in rose).
+- Unified diff viewer with syntax highlighting.
 - Immediate `[Approve]` and `[Reject]` actions dispatching `approval_response` back to the gateway.
 
 ### 4. In-Browser TUI & Terminal Mode
-- One-click toggle switch between **Web Chat**, **Split Screen** (Chat on Left, Live Terminal on Right), and **Full TUI Mode**.
+- 1-click toggle between **Chat Only**, **Split Screen** (Chat on Left, Live Terminal on Right), and **Full TUI Mode**.
 - Powered by `@xterm/xterm` and `@xterm/addon-fit` connecting directly to host PTY or tmux session.
 
 ### 5. Bot Mode & Swarm Visualizer
-- Switch between interactive human chat and autonomous bot mode.
+- Toggle between interactive human chat and autonomous bot mode.
 - Real-time parent-child subagent hierarchy visualizer tracking token usage, status, and outputs spawned by `delegate_task`.
 - Multi-channel delivery targets selector: Origin WebUI, Discord, Telegram, or Local save.
 
-### 6. Workspace Drawer & Temporary Chat
-- **Workspace Explorer**: Live directory tree, file preview, git status, diff viewer, and instant 1-click raw download generator (`/api/workspace/raw?path=...&download=1`).
-- **Temporary Chat Mode**: Incognito switch that marks sessions as transient, bypassing `MEMORY.md` updates, disabling SQLite persistence, and blocking scheduled cron side-effects.
+### 6. Visual Context Annotator & Variable Pills
+- **Visual Annotator**: Upload screenshots or paste images, draw bounding boxes, and drop numbered coordinate pins to give vision models pinpoint visual context.
+- **Variable Pills**: Fast chips (`#workspace-file`, `#git-diff`, `#recent-error`, `#active-skill`, `#tree`, `#last-command`) inserted directly into prompt composer.
 
-### 7. Voice Chat Interface
+### 7. OpenClaw Secret Vault & Operator Settings
+- In-UI credential vault managing `~/.hermes/.env` entries with masked inputs, copy button, and live connectivity tests.
+- Operator settings dialog with real-time gateway latency ping measurement in milliseconds (`< 5ms` on local daemon).
+
+### 8. Live Voice Chat Interface
 - Integrated mic button with real-time Web Audio API frequency waveform visualizer.
 - End-to-end audio pipeline routing STT / TTS through Whisper and streaming speech endpoints.
 - Hands-free auto-send mode with silence detection.
 
-### 8. OpenClaw Secret Vault
-- In-UI credential vault managing `~/.hermes/.env` entries.
-- Masked inputs, copy button, key rotation alerts, and live connectivity test button for OpenRouter, OpenAI, and Telegram.
-- Strictly separates secrets in `.env` and configuration in `config.yaml`.
-
-### 9. Native Slash Commands & System Drawers
-- Native slash-command menu (`/help`, `/clear`, `/model`, `/skills`, `/memory`, `/cron`, `/sessions`, `/workspace`, `/secrets`, `/swarm`, `/terminal`, `/doctor`).
-- Dedicated drawer pages for **Skills Manager**, **Memory & Profile View**, **Cron Control**, and **Sessions Lineage**.
-
 ---
 
-## ⚡ Quickstart
+## ⚡ Deployment Options
 
-### Run with Docker Compose
-
+### Option A: 1-Command Installer (Recommended)
 ```bash
-# 1. Clone repository
-git clone https://github.com/keshavsharma/Glyte-hermes-os.git
-cd Glyte-hermes-os
-
-# 2. Start container
-docker compose up -d --build
-
-# 3. Open WebUI
-open http://localhost:4000
+curl -fsSL https://raw.githubusercontent.com/Buriatma/Glyte-hermes-os/main/install.sh | bash
 ```
 
-### Run Locally with PNPM
-
+### Option B: Docker Compose
 ```bash
-cd target-ui
+git clone https://github.com/Buriatma/Glyte-hermes-os.git
+cd Glyte-hermes-os
+docker compose up -d --build
+```
+WebUI will be available at `http://localhost:4000` (Default password: `hermes`).
+
+### Option C: Manual Setup with PNPM
+```bash
+git clone https://github.com/Buriatma/Glyte-hermes-os.git
+cd Glyte-hermes-os/target-ui
 pnpm install
 pnpm dev -p 4000
 ```
@@ -155,13 +174,13 @@ pnpm dev -p 4000
 | :--- | :--- | :--- |
 | `PORT` | `4000` | HTTP port for GlyteOS Hermes client |
 | `HERMES_GATEWAY_URL` | `ws://127.0.0.1:9119` | JSON-RPC 2.0 WebSocket Gateway address |
-| `HERMES_WEBUI_PASSWORD`| `admin` | Password required to access WebUI |
+| `HERMES_WEBUI_PASSWORD`| `hermes` | Password required to access WebUI |
 | `HERMES_WORKSPACE_PATH`| Current workspace | Base root path for file explorer |
 | `HERMES_ENV_PATH` | `~/.hermes/.env` | Path to persistent OpenClaw secret file |
 
 ---
 
-## 📚 Detailed Documentation
+## 📚 Technical Documentation Suite
 
 - [Installation & Bare-Metal Setup](docs/INSTALLATION.md)
 - [Hermes Gateway & Firewall Configuration](docs/HERMES-CONFIGURATION.md)
@@ -171,6 +190,36 @@ pnpm dev -p 4000
 
 ---
 
+## 🔮 Suggested Next Features & Upstream Hermes Roadmap
+
+Here are high-impact enhancements ready to be built on top of native Hermes capabilities:
+
+### 1. 📋 Native Hermes Kanban Task Board (`session_kanban.py`)
+- **What it does**: Direct integration with Hermes' built-in `session_kanban.py` engine.
+- **Why it matters**: Provides a drag-and-drop Kanban board (`Backlog`, `In Progress`, `Review / Approval`, `Done`). Subagent delegations and multi-step plans automatically generate cards with real-time token tracking and step counters.
+
+### 2. 👥 Multi-Agent Discussion Rooms (`hosted_rooms.py`)
+- **What it does**: Harnesses the gateway's `hosted_rooms.py` protocol to host collaborative multi-persona agent roundtables.
+- **Why it matters**: Allows multiple autonomous agents (e.g., Software Architect, Security Auditor, Coder, and QA Tester) to debate architectural trade-offs and review diffs collaboratively in a shared room before executing changes.
+
+### 3. 🎙️ Sub-200ms Streaming TTS Audio Engine (`streaming_tts_consumer.py`)
+- **What it does**: Directly plays raw audio byte chunks over WebSockets using the browser Web Audio API.
+- **Why it matters**: Delivers real-time spoken voice responses without waiting for the full LLM sentence or paragraph to complete, creating a lightning-fast conversational experience.
+
+### 4. 🧠 Associative Memory & Knowledge Graph Visualizer
+- **What it does**: Visualizes long-term episodic and declarative memory stored in `~/.hermes/memory/` and `MEMORY.md` as an interactive 2D/3D force-directed node graph.
+- **Why it matters**: Allows operators to explore, audit, edit, or prune what the agent remembers about projects, preferences, and past solutions.
+
+### 5. 🛡️ 1-Click Sovereign Cloudflare / Tailscale Tunneling
+- **What it does**: Built-in toggle in Operator Settings to spawn authenticated Cloudflare Zero-Trust or Tailscale Funnel endpoints.
+- **Why it matters**: Access your home or private workstation Hermes agent securely from mobile devices without exposing open ports to the public internet.
+
+### 6. 🎛️ Local LLM Switcher & Hardware Telemetry (Ollama / vLLM / llama.cpp)
+- **What it does**: Hardware HUD showing VRAM utilization, GPU temperature, and generation tokens/sec alongside a 1-click model switcher.
+- **Why it matters**: Seamless toggle between cloud models (OpenRouter, Claude, GPT-4o) and 100% offline air-gapped sovereign models (Hermes 3 8B/70B, Qwen 2.5 Coder).
+
+---
+
 ## 🛡️ License
 
-Released under the **MIT License**. Maintained with pride by [GlyteTech](https://glyte.tech).
+Released under the **[MIT License](LICENSE)**. Maintained with pride by [GlyteTech](https://glyte.tech).
