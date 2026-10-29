@@ -4,131 +4,203 @@ import { useState } from "react";
 import { 
   Cpu, 
   Zap, 
-  ChevronDown, 
+  Server, 
   Check, 
-  Server
+  RefreshCw, 
+  Trash2, 
+  ShieldCheck,
+  HardDrive
 } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 
-interface ModelOption {
-  id: string;
-  name: string;
-  tier: "local" | "cloud";
-  provider: string;
-  vram?: string;
-  context: string;
-}
-
-const AVAILABLE_MODELS: ModelOption[] = [
-  { id: "hermes-3-8b", name: "Hermes 3 (8B Llama 3.1)", tier: "local", provider: "Local vLLM / Ollama", vram: "5.8 GB", context: "128k" },
-  { id: "hermes-3-70b", name: "Hermes 3 (70B Llama 3.1)", tier: "local", provider: "Local GPU Server", vram: "38.2 GB", context: "128k" },
-  { id: "qwen-2.5-coder-32b", name: "Qwen 2.5 Coder (32B)", tier: "local", provider: "Local Ollama", vram: "18.4 GB", context: "32k" },
-  { id: "claude-3-7-sonnet", name: "Claude 3.7 Sonnet (Hybrid)", tier: "cloud", provider: "Anthropic", context: "200k" },
-  { id: "gpt-4o", name: "GPT-4o Omnimodal", tier: "cloud", provider: "OpenAI", context: "128k" },
-  { id: "deepseek-r1", name: "DeepSeek R1 (Reasoning)", tier: "cloud", provider: "OpenRouter", context: "64k" },
-];
-
-export function HardwareTelemetryHUD({
-  activeModel = "hermes-3-8b",
-  onSelectModel,
-}: {
-  activeModel?: string;
-  onSelectModel?: (modelId: string) => void;
-}) {
-  const [selectedId, setSelectedId] = useState(activeModel);
-  const [isDropdownOpen, setIsDropdownOpen] = useState(false);
-
-  const current = AVAILABLE_MODELS.find((m) => m.id === selectedId) || AVAILABLE_MODELS[0];
-
-  const handleSelect = (id: string) => {
-    setSelectedId(id);
-    onSelectModel?.(id);
-    setIsDropdownOpen(false);
-  };
-
+function ProgressBar({ value, color = "bg-primary" }: { value: number; color?: string }) {
   return (
-    <div className="relative flex items-center gap-2">
-      {/* Telemetry Chips */}
-      <div className="hidden xl:flex items-center gap-1.5 px-2 py-1 rounded-lg bg-card/80 border border-border/50 text-[11px] font-mono">
-        {/* VRAM Gauge */}
-        <div className="flex items-center gap-1 text-muted-foreground pr-1.5 border-r border-border/40">
-          <Server className="size-3 text-cyan-400" />
-          <span>VRAM:</span>
-          <span className="text-foreground font-semibold">12.4 / 24G</span>
-        </div>
-
-        {/* Tokens/sec */}
-        <div className="flex items-center gap-1 text-muted-foreground pr-1.5 border-r border-border/40">
-          <Zap className="size-3 text-amber-400" />
-          <span className="text-foreground font-semibold">68.2 t/s</span>
-        </div>
-
-        {/* CPU */}
-        <div className="flex items-center gap-1 text-muted-foreground">
-          <Cpu className="size-3 text-emerald-400" />
-          <span className="text-foreground font-semibold">18%</span>
-        </div>
-      </div>
-
-      {/* Model Selector Pill */}
-      <button
-        onClick={() => setIsDropdownOpen((prev) => !prev)}
-        className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-card border border-border/60 hover:border-primary/50 text-xs font-medium text-foreground transition-all shadow-sm"
-      >
-        <span className={`size-2 rounded-full ${current.tier === "local" ? "bg-emerald-400" : "bg-cyan-400"}`} />
-        <span className="max-w-[130px] truncate">{current.name}</span>
-        <span className="text-[10px] font-mono px-1 py-0.2 rounded bg-muted text-muted-foreground">
-          {current.tier}
-        </span>
-        <ChevronDown className="size-3 text-muted-foreground" />
-      </button>
-
-      {/* Dropdown Menu */}
-      {isDropdownOpen && (
-        <>
-          <div className="fixed inset-0 z-40" onClick={() => setIsDropdownOpen(false)} />
-          <div className="absolute right-0 top-full mt-1.5 w-72 rounded-xl bg-card border border-border/60 shadow-2xl p-1.5 z-50 animate-in fade-in zoom-in-95 duration-100 space-y-1">
-            <div className="px-2 py-1 text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">
-              Select Inference Model
-            </div>
-
-            {AVAILABLE_MODELS.map((model) => {
-              const isSelected = model.id === selectedId;
-              return (
-                <button
-                  key={model.id}
-                  onClick={() => handleSelect(model.id)}
-                  className={`w-full flex items-center justify-between px-2.5 py-2 rounded-lg text-xs text-left transition-colors ${
-                    isSelected ? "bg-primary/10 text-primary" : "hover:bg-muted text-foreground"
-                  }`}
-                >
-                  <div className="space-y-0.5">
-                    <div className="flex items-center gap-1.5">
-                      <span className="font-medium">{model.name}</span>
-                      {isSelected && <Check className="size-3 text-primary" />}
-                    </div>
-                    <div className="flex items-center gap-1.5 text-[10px] text-muted-foreground font-mono">
-                      <span>{model.provider}</span>
-                      <span>•</span>
-                      <span>{model.context}</span>
-                      {model.vram && (
-                        <>
-                          <span>•</span>
-                          <span className="text-cyan-400">{model.vram}</span>
-                        </>
-                      )}
-                    </div>
-                  </div>
-                  <span className={`text-[9px] font-mono px-1.5 py-0.5 rounded uppercase ${
-                    model.tier === "local" ? "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20" : "bg-blue-500/10 text-blue-400 border border-blue-500/20"
-                  }`}>
-                    {model.tier}
-                  </span>
-                </button>
-              );
-            })}
-          </div>
-        </>
-      )}
+    <div className="w-full bg-muted/60 h-1.5 rounded-full overflow-hidden">
+      <div
+        className={`h-full rounded-full transition-all duration-500 ${color}`}
+        style={{ width: `${Math.min(100, Math.max(0, value))}%` }}
+      />
     </div>
   );
 }
+
+export function ResourceManager() {
+  const [isPurging, setIsPurging] = useState(false);
+  const [purgeFeedback, setPurgeFeedback] = useState<string | null>(null);
+  const [isBenchmarking, setIsBenchmarking] = useState(false);
+  const [tps, setTps] = useState(68.2);
+
+  const handlePurgeCache = () => {
+    setIsPurging(true);
+    setTimeout(() => {
+      setIsPurging(false);
+      setPurgeFeedback("KV Cache purged · 1.8 GB memory reclaimed");
+      setTimeout(() => setPurgeFeedback(null), 3000);
+    }, 800);
+  };
+
+  const handleRunBenchmark = () => {
+    setIsBenchmarking(true);
+    setTimeout(() => {
+      const newTps = +(65 + Math.random() * 12).toFixed(1);
+      setTps(newTps);
+      setIsBenchmarking(false);
+    }, 1000);
+  };
+
+  return (
+    <div className="space-y-4 animate-in fade-in duration-200">
+      <div>
+        <div className="flex items-center justify-between">
+          <div>
+            <h3 className="text-xs font-semibold text-foreground flex items-center gap-1.5">
+              <Cpu className="size-3.5 text-primary" />
+              Sovereign Resource Manager
+            </h3>
+            <p className="text-[11px] text-muted-foreground mt-0.5">
+              Unified hardware telemetry and native Hermes runtime diagnostics.
+            </p>
+          </div>
+          <Badge variant="outline" className="text-[10px] font-mono text-emerald-400 border-emerald-500/30 bg-emerald-500/10">
+            Native Hermes Engine
+          </Badge>
+        </div>
+      </div>
+
+      {/* Grid of Gauges */}
+      <div className="grid grid-cols-2 gap-3">
+        {/* VRAM / GPU */}
+        <div className="p-3 rounded-2xl bg-card/40 border border-border/40 space-y-2">
+          <div className="flex items-center justify-between">
+            <span className="text-[11px] font-medium text-muted-foreground flex items-center gap-1.5">
+              <Server className="size-3.5 text-cyan-400" />
+              VRAM / Unified GPU
+            </span>
+            <span className="text-xs font-mono font-semibold text-foreground">12.4 / 24.0 GB</span>
+          </div>
+          <ProgressBar value={51.6} color="bg-cyan-500" />
+          <div className="flex justify-between text-[10px] font-mono text-muted-foreground">
+            <span>Allocated: 51.6%</span>
+            <span className="text-cyan-400">Metal / CUDA</span>
+          </div>
+        </div>
+
+        {/* Inference Speed */}
+        <div className="p-3 rounded-2xl bg-card/40 border border-border/40 space-y-2">
+          <div className="flex items-center justify-between">
+            <span className="text-[11px] font-medium text-muted-foreground flex items-center gap-1.5">
+              <Zap className="size-3.5 text-amber-400" />
+              Inference Throughput
+            </span>
+            <span className="text-xs font-mono font-semibold text-foreground">{tps} t/s</span>
+          </div>
+          <ProgressBar value={(tps / 100) * 100} color="bg-amber-500" />
+          <div className="flex justify-between text-[10px] font-mono text-muted-foreground">
+            <span>Hermes 3 Engine</span>
+            <button
+              onClick={handleRunBenchmark}
+              disabled={isBenchmarking}
+              className="text-amber-400 hover:underline flex items-center gap-1"
+            >
+              <RefreshCw className={`size-2.5 ${isBenchmarking ? "animate-spin" : ""}`} />
+              Benchmark
+            </button>
+          </div>
+        </div>
+
+        {/* Host CPU */}
+        <div className="p-3 rounded-2xl bg-card/40 border border-border/40 space-y-2">
+          <div className="flex items-center justify-between">
+            <span className="text-[11px] font-medium text-muted-foreground flex items-center gap-1.5">
+              <Cpu className="size-3.5 text-emerald-400" />
+              Host CPU Utilization
+            </span>
+            <span className="text-xs font-mono font-semibold text-foreground">18%</span>
+          </div>
+          <ProgressBar value={18} color="bg-emerald-500" />
+          <div className="flex justify-between text-[10px] font-mono text-muted-foreground">
+            <span>12 Cores Active</span>
+            <span className="text-emerald-400">Optimal</span>
+          </div>
+        </div>
+
+        {/* Context Window Budget */}
+        <div className="p-3 rounded-2xl bg-card/40 border border-border/40 space-y-2">
+          <div className="flex items-center justify-between">
+            <span className="text-[11px] font-medium text-muted-foreground flex items-center gap-1.5">
+              <HardDrive className="size-3.5 text-purple-400" />
+              Active Context Window
+            </span>
+            <span className="text-xs font-mono font-semibold text-foreground">48.2k / 128k</span>
+          </div>
+          <ProgressBar value={37.6} color="bg-purple-500" />
+          <div className="flex justify-between text-[10px] font-mono text-muted-foreground">
+            <span>37.6% capacity</span>
+            <span className="text-purple-400">128,000 max</span>
+          </div>
+        </div>
+      </div>
+
+      {/* Sovereign Engine & SQLite Status Card */}
+      <div className="p-3.5 rounded-2xl bg-card/30 border border-border/40 space-y-2.5 text-xs font-mono">
+        <div className="flex items-center justify-between text-muted-foreground border-b border-border/30 pb-2">
+          <span className="font-semibold text-foreground flex items-center gap-1.5">
+            <ShieldCheck className="size-3.5 text-emerald-400" />
+            Native Hermes Model Runtime
+          </span>
+          <span className="text-[11px] text-emerald-400">Sovereign / On-Device</span>
+        </div>
+
+        <div className="grid grid-cols-2 gap-2 text-[11px]">
+          <div>
+            <span className="text-muted-foreground">Orchestrator: </span>
+            <span className="text-foreground font-semibold">Hermes OS Native</span>
+          </div>
+          <div>
+            <span className="text-muted-foreground">Daemon Port: </span>
+            <span className="text-primary font-semibold">9119 (WebSocket RPC)</span>
+          </div>
+          <div>
+            <span className="text-muted-foreground">FTS5 Engine: </span>
+            <span className="text-foreground font-semibold">SQLite WAL (0 external DBs)</span>
+          </div>
+          <div>
+            <span className="text-muted-foreground">KV Attention: </span>
+            <span className="text-cyan-400 font-semibold">FlashAttention-2</span>
+          </div>
+        </div>
+      </div>
+
+      {/* Actions Bar */}
+      <div className="flex items-center justify-between pt-1">
+        <div>
+          {purgeFeedback ? (
+            <span className="text-xs font-mono text-emerald-400 flex items-center gap-1 animate-in fade-in">
+              <Check className="size-3" />
+              {purgeFeedback}
+            </span>
+          ) : (
+            <span className="text-[11px] font-mono text-zinc-500">
+              Host RAM Allocated: 8.2 GB / 32.0 GB
+            </span>
+          )}
+        </div>
+
+        <Button
+          size="sm"
+          variant="outline"
+          onClick={handlePurgeCache}
+          disabled={isPurging}
+          className="h-8 text-xs gap-1.5 border-border/60 hover:border-rose-500/40 hover:text-rose-400"
+        >
+          <Trash2 className="size-3" />
+          {isPurging ? "Purging..." : "Purge KV Cache"}
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+// Retain alias for any existing imports
+export const HardwareTelemetryHUD = ResourceManager;

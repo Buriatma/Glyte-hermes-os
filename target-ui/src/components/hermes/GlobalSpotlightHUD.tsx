@@ -85,7 +85,8 @@ export function GlobalSpotlightHUD({ isOpen, onClose, onSelectAction }: Spotligh
     { id: "action:workspace", label: "Open Workspace Explorer", icon: Layers, category: "Navigation", color: "text-cyan-400" },
     { id: "action:terminal", label: "Open In-Browser Terminal", icon: Terminal, category: "Tool", color: "text-emerald-400" },
     { id: "action:rooms", label: "Open Multi-Agent Rooms", icon: Sparkles, category: "Collaboration", color: "text-purple-400" },
-    { id: "action:model", label: "Switch LLM Model (Local / Cloud)", icon: Cpu, category: "Settings", color: "text-blue-400" },
+    { id: "action:resources", label: "Open Resource Manager", icon: Cpu, category: "System", color: "text-blue-400" },
+    { id: "action:logs", label: "View System & Gateway Logs", icon: Terminal, category: "System", color: "text-amber-400" },
     { id: "action:secrets", label: "Open OpenClaw Secret Vault", icon: Shield, category: "Security", color: "text-rose-400" },
   ];
 

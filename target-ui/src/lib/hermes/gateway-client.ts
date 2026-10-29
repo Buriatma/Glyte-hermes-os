@@ -29,6 +29,14 @@ export interface TextAttachment {
   sizeKB: string;
 }
 
+export interface HermesLogEntry {
+  id: string;
+  timestamp: number;
+  level: "info" | "rpc" | "tool" | "warn" | "error";
+  message: string;
+  details?: any;
+}
+
 export interface HermesMessage {
   id: string;
   role: "user" | "assistant" | "system" | "tool";
@@ -122,11 +130,60 @@ class GatewayClient {
   private pendingServerRequests = new Map<string, { frameId: string | number; params: any }>();
   private listeners = new Map<string, Set<EventHandler>>();
   private stateListeners = new Set<(state: ConnectionState) => void>();
+  private logListeners = new Set<(entry: HermesLogEntry) => void>();
+  private logHistory: HermesLogEntry[] = [
+    {
+      id: "log_init_0",
+      timestamp: Date.now() - 5000,
+      level: "info",
+      message: "GlyteOS Hermes Sovereign Kernel initialized",
+    },
+    {
+      id: "log_init_1",
+      timestamp: Date.now() - 4000,
+      level: "info",
+      message: "Gateway JSON-RPC 2.0 client prepared for native agent routing",
+    },
+  ];
   private activeSessionId: string | null = null;
   private gatewayUrl: string;
 
   constructor(url?: string) {
     this.gatewayUrl = url || this.resolveGatewayUrl();
+  }
+
+  public log(level: HermesLogEntry["level"], message: string, details?: any) {
+    const entry: HermesLogEntry = {
+      id: `log_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+      timestamp: Date.now(),
+      level,
+      message,
+      details,
+    };
+    this.logHistory.push(entry);
+    if (this.logHistory.length > 500) {
+      this.logHistory.shift();
+    }
+    for (const listener of this.logListeners) {
+      try {
+        listener(entry);
+      } catch (e) {
+        console.error("Error in log listener:", e);
+      }
+    }
+  }
+
+  public getLogs(): HermesLogEntry[] {
+    return [...this.logHistory];
+  }
+
+  public onLog(listener: (entry: HermesLogEntry) => void): () => void {
+    this.logListeners.add(listener);
+    return () => this.logListeners.delete(listener);
+  }
+
+  public clearLogs() {
+    this.logHistory = [];
   }
 
   public resolveGatewayUrl(): string {
@@ -247,6 +304,7 @@ class GatewayClient {
           this.reconnectAttempts = 0;
           this.setState("open");
           this.startHeartbeat();
+          this.log("info", `Connected to Hermes Gateway at ${this.gatewayUrl}`);
           this.emit("gateway.ready", { url: this.gatewayUrl });
           resolve();
         };
@@ -257,6 +315,7 @@ class GatewayClient {
 
         ws.onerror = (_event) => {
           const errObj = new Error(`WebSocket connection failed to ${this.gatewayUrl}`);
+          this.log("error", `Gateway WebSocket connection error at ${this.gatewayUrl}`);
           this.emit("error", errObj);
           if (!isSettled) {
             isSettled = true;
@@ -271,6 +330,7 @@ class GatewayClient {
           this.socket = null;
           this.rejectPendingRequests("WebSocket closed");
           this.setState("closed");
+          this.log("warn", `Gateway WebSocket closed (code ${event.code})`);
           this.emit("closed", { code: event.code, reason: event.reason });
           this.scheduleReconnect();
         };
@@ -355,8 +415,10 @@ class GatewayClient {
         clearTimeout(pending.timer);
         this.pendingRequests.delete(frame.id);
         if (frame.error) {
+          this.log("error", `<-- rpc.error (${frame.id}): ${frame.error.message || frame.error.code}`);
           pending.reject(new Error(frame.error.message || `RPC Error code ${frame.error.code}`));
         } else {
+          this.log("rpc", `<-- rpc.result (${frame.id})`);
           pending.resolve(frame.result);
         }
       }
@@ -365,6 +427,7 @@ class GatewayClient {
 
     // 2. Check if frame is an Inbound Server-to-Client Request (e.g. approval)
     if (frame.id !== undefined && frame.id !== null && frame.method && frame.method !== "event") {
+      this.log("rpc", `<-- server.call: ${frame.method} (${frame.id})`);
       this.handleServerRequest(frame);
       return;
     }
@@ -373,6 +436,11 @@ class GatewayClient {
     if (frame.method === "event" || (!frame.id && frame.params)) {
       const eventType = frame.params?.type || frame.params?.event || frame.method;
       const payload = frame.params?.payload ?? frame.params;
+      if (eventType?.includes("tool")) {
+        this.log("tool", `tool event: ${payload?.name || eventType}`);
+      } else {
+        this.log("info", `gateway event: ${eventType}`);
+      }
       this.handleEventPayload(eventType, payload, frame.params?.session_id);
       return;
     }
@@ -511,6 +579,7 @@ class GatewayClient {
 
       this.pendingRequests.set(id, { resolve, reject, timer });
       try {
+        this.log("rpc", `--> ${method} (${id})`);
         this.socket!.send(JSON.stringify(frame));
       } catch (err) {
         clearTimeout(timer);

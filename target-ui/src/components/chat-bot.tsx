@@ -50,21 +50,21 @@ import { WorkspaceDrawer } from "@/components/hermes/WorkspaceDrawer";
 import { KanbanBoard } from "@/components/hermes/KanbanBoard";
 import { GlobalSpotlightHUD } from "@/components/hermes/GlobalSpotlightHUD";
 import { MultiAgentRooms } from "@/components/hermes/MultiAgentRooms";
-import { HardwareTelemetryHUD } from "@/components/hermes/HardwareTelemetryHUD";
 import { MemoryGraphVisualizer } from "@/components/hermes/MemoryGraphVisualizer";
+import { appStore } from "@/app/store";
 
 interface ChatBotProps {
   threadId: string;
   initialMessages?: HermesMessage[];
-  selectedChatModel?: string;
 }
 
 const SLASH_COMMANDS = [
   { command: "/help", desc: "Show Hermes OS command reference", action: "help" },
   { command: "/clear", desc: "Clear active conversation history", action: "clear" },
+  { command: "/logs", desc: "View Gateway & Agent runtime logs", action: "logs" },
+  { command: "/resources", desc: "Open System Resource Manager", action: "resources" },
   { command: "/workspace", desc: "Toggle Right-Sidebar Workspace Explorer", action: "toggle:workspace" },
   { command: "/terminal", desc: "Toggle In-Browser TUI & Terminal", action: "terminal" },
-  { command: "/model", desc: "Show or change active model", action: "model" },
   { command: "/skills", desc: "Open Official Hermes Skills Catalog", action: "nav:/skills" },
   { command: "/memory", desc: "Open MEMORY.md & USER.md editor", action: "nav:/memory" },
   { command: "/cron", desc: "Open Cron Schedule Manager", action: "nav:/cron" },
@@ -186,6 +186,12 @@ export default function ChatBot({ threadId, initialMessages = [] }: ChatBotProps
         break;
       case "action:memory":
         setRightPanel("memory");
+        break;
+      case "action:resources":
+        appStore.getState().mutate({ openUserSettings: true, userSettingsTab: "resources" });
+        break;
+      case "action:logs":
+        appStore.getState().mutate({ openUserSettings: true, userSettingsTab: "logs" });
         break;
       case "action:secrets":
         window.location.href = "/secrets";
@@ -431,6 +437,16 @@ export default function ChatBot({ threadId, initialMessages = [] }: ChatBotProps
         window.location.href = "/secrets";
         return;
       }
+      if (cmd === "/logs") {
+        appStore.getState().mutate({ openUserSettings: true, userSettingsTab: "logs" });
+        setInput("");
+        return;
+      }
+      if (cmd === "/resources") {
+        appStore.getState().mutate({ openUserSettings: true, userSettingsTab: "resources" });
+        setInput("");
+        return;
+      }
       if (cmd === "/swarm") {
         window.location.href = "/swarm";
         return;
@@ -639,8 +655,17 @@ export default function ChatBot({ threadId, initialMessages = [] }: ChatBotProps
           </div>
 
           <div className="flex items-center gap-1.5">
-            {/* Hardware Telemetry HUD & Model Selector */}
-            <HardwareTelemetryHUD />
+            {/* Gateway & Agent Logs */}
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => appStore.getState().mutate({ openUserSettings: true, userSettingsTab: "logs" })}
+              className="h-7 px-2 text-[11px] font-mono gap-1.5 border-border/50 text-amber-400 hover:text-amber-300 hover:border-amber-500/40 bg-amber-500/5 transition-all"
+              title="Open Gateway & Agent Live Logs"
+            >
+              <Terminal className="size-3" />
+              <span className="hidden sm:inline">Logs</span>
+            </Button>
 
             {/* Global Spotlight (Cmd + K) */}
             <Button

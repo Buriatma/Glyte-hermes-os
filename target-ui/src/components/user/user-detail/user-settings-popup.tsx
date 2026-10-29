@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { appStore } from "@/app/store";
 import { useShallow } from "zustand/shallow";
 import {
@@ -24,8 +24,14 @@ import {
   Globe,
   Sliders,
   ExternalLink,
+  Terminal,
+  Trash2,
+  Copy,
+  Download,
+  Search,
 } from "lucide-react";
-import { getGatewayClient } from "@/lib/hermes/gateway-client";
+import { getGatewayClient, HermesLogEntry } from "@/lib/hermes/gateway-client";
+import { ResourceManager } from "@/components/hermes/HardwareTelemetryHUD";
 import { cn } from "@/lib/utils";
 
 export function UserSettingsPopup({
@@ -33,11 +39,11 @@ export function UserSettingsPopup({
 }: {
   userSettingsComponent?: React.ReactNode;
 }) {
-  const [openUserSettings, appStoreMutate] = appStore(
-    useShallow((state) => [state.openUserSettings, state.mutate]),
+  const [openUserSettings, userSettingsTab, appStoreMutate] = appStore(
+    useShallow((state) => [state.openUserSettings, state.userSettingsTab, state.mutate]),
   );
 
-  const [activeTab, setActiveTab] = useState<"general" | "gateway" | "security" | "diagnostics">("gateway");
+  const [activeTab, setActiveTab] = useState<"resources" | "logs" | "gateway" | "security" | "general" | "diagnostics">("resources");
   const [gatewayUrl, setGatewayUrl] = useState("");
   const [password, setPassword] = useState("");
   const [pingStatus, setPingStatus] = useState<{ testing: boolean; latency?: number; ok?: boolean; msg?: string }>({ testing: false });
@@ -45,12 +51,35 @@ export function UserSettingsPopup({
   const [autoOpenCanvas, setAutoOpenCanvas] = useState(true);
   const [audioFeedback, setAudioFeedback] = useState(true);
 
+  // Logs viewer state
+  const [logs, setLogs] = useState<HermesLogEntry[]>([]);
+  const [logFilter, setLogFilter] = useState<"all" | "rpc" | "tool" | "info" | "warn" | "error">("all");
+  const [logSearch, setLogSearch] = useState("");
+  const [copiedLogs, setCopiedLogs] = useState(false);
+  const [autoScroll, setAutoScroll] = useState(true);
+  const logsContainerRef = useRef<HTMLDivElement>(null);
+
   useEffect(() => {
     if (openUserSettings) {
+      if (userSettingsTab) {
+        setActiveTab(userSettingsTab);
+      }
       const client = getGatewayClient();
       setGatewayUrl(client.getGatewayUrl());
+      setLogs(client.getLogs());
+
+      const unsubLogs = client.onLog((entry) => {
+        setLogs((prev) => [...prev, entry]);
+      });
+      return () => unsubLogs();
     }
-  }, [openUserSettings]);
+  }, [openUserSettings, userSettingsTab]);
+
+  useEffect(() => {
+    if (autoScroll && logsContainerRef.current) {
+      logsContainerRef.current.scrollTop = logsContainerRef.current.scrollHeight;
+    }
+  }, [logs, autoScroll, activeTab]);
 
   const handleTestPing = async () => {
     setPingStatus({ testing: true });
@@ -96,12 +125,48 @@ export function UserSettingsPopup({
     }
   };
 
+  const handleClearLogs = () => {
+    getGatewayClient().clearLogs();
+    setLogs([]);
+  };
+
+  const handleCopyLogs = () => {
+    const text = logs
+      .map((l) => `[${new Date(l.timestamp).toLocaleTimeString()}] [${l.level.toUpperCase()}] ${l.message}`)
+      .join("\n");
+    navigator.clipboard.writeText(text);
+    setCopiedLogs(true);
+    setTimeout(() => setCopiedLogs(false), 2000);
+  };
+
+  const handleExportLogs = () => {
+    const text = logs
+      .map((l) => `[${new Date(l.timestamp).toISOString()}] [${l.level.toUpperCase()}] ${l.message} ${l.details ? JSON.stringify(l.details) : ""}`)
+      .join("\n");
+    const blob = new Blob([text], { type: "text/plain" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `glyte-hermes-logs-${Date.now()}.log`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const filteredLogs = logs.filter((log) => {
+    if (logFilter !== "all" && log.level !== logFilter) return false;
+    if (logSearch) {
+      const q = logSearch.toLowerCase();
+      return log.message.toLowerCase().includes(q) || log.level.toLowerCase().includes(q);
+    }
+    return true;
+  });
+
   return (
     <Dialog
       open={openUserSettings}
       onOpenChange={(open) => appStoreMutate({ openUserSettings: open })}
     >
-      <DialogContent className="max-w-2xl p-0 overflow-hidden rounded-3xl border border-border/70 bg-[#0b0f19] shadow-2xl">
+      <DialogContent className="max-w-3xl p-0 overflow-hidden rounded-3xl border border-border/70 bg-[#0b0f19] shadow-2xl">
         {/* Top Header */}
         <DialogHeader className="px-6 py-4 border-b border-border/40 bg-card/40 flex flex-row items-center justify-between space-y-0">
           <div className="flex items-center gap-2.5">
@@ -110,10 +175,10 @@ export function UserSettingsPopup({
             </div>
             <div>
               <DialogTitle className="text-base font-bold tracking-tight text-foreground text-left">
-                GlyteOS Hermes Settings
+                GlyteOS Hermes Sovereign Control Center
               </DialogTitle>
               <p className="text-[11px] text-muted-foreground font-mono text-left">
-                Operator profile, gateway endpoints & safety policy
+                Resource manager, live telemetry, execution logs & safety policy
               </p>
             </div>
           </div>
@@ -123,9 +188,35 @@ export function UserSettingsPopup({
           </Badge>
         </DialogHeader>
 
-        <div className="flex flex-col md:flex-row min-h-[380px]">
+        <div className="flex flex-col md:flex-row min-h-[440px]">
           {/* Left Navigation Tabs */}
-          <div className="w-full md:w-48 p-3 border-r border-border/40 bg-card/10 space-y-1">
+          <div className="w-full md:w-52 p-3 border-r border-border/40 bg-card/10 space-y-1">
+            <button
+              onClick={() => setActiveTab("resources")}
+              className={cn(
+                "w-full flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-medium transition-all text-left",
+                activeTab === "resources"
+                  ? "bg-primary/15 text-primary border border-primary/30 font-semibold"
+                  : "text-muted-foreground hover:text-foreground hover:bg-muted/40"
+              )}
+            >
+              <Cpu className="size-3.5 text-primary" />
+              Resource Manager
+            </button>
+
+            <button
+              onClick={() => setActiveTab("logs")}
+              className={cn(
+                "w-full flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-medium transition-all text-left",
+                activeTab === "logs"
+                  ? "bg-amber-500/15 text-amber-400 border border-amber-500/30 font-semibold"
+                  : "text-muted-foreground hover:text-foreground hover:bg-muted/40"
+              )}
+            >
+              <Terminal className="size-3.5 text-amber-400" />
+              Gateway & Agent Logs
+            </button>
+
             <button
               onClick={() => setActiveTab("gateway")}
               className={cn(
@@ -135,7 +226,7 @@ export function UserSettingsPopup({
                   : "text-muted-foreground hover:text-foreground hover:bg-muted/40"
               )}
             >
-              <Server className="size-3.5" />
+              <Server className="size-3.5 text-cyan-400" />
               Gateway & RPC
             </button>
 
@@ -148,7 +239,7 @@ export function UserSettingsPopup({
                   : "text-muted-foreground hover:text-foreground hover:bg-muted/40"
               )}
             >
-              <ShieldCheck className="size-3.5" />
+              <ShieldCheck className="size-3.5 text-emerald-400" />
               Security & Auth
             </button>
 
@@ -174,13 +265,147 @@ export function UserSettingsPopup({
                   : "text-muted-foreground hover:text-foreground hover:bg-muted/40"
               )}
             >
-              <Cpu className="size-3.5" />
+              <Globe className="size-3.5" />
               System Doctor
             </button>
           </div>
 
           {/* Right Tab Content */}
-          <div className="flex-1 p-5 overflow-y-auto space-y-4">
+          <div className="flex-1 p-5 overflow-y-auto space-y-4 max-h-[500px]">
+            {/* Resource Manager Tab */}
+            {activeTab === "resources" && (
+              <ResourceManager />
+            )}
+
+            {/* Gateway & Agent Logs Tab */}
+            {activeTab === "logs" && (
+              <div className="space-y-3 flex flex-col h-full animate-in fade-in duration-200">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h3 className="text-xs font-semibold text-foreground flex items-center gap-1.5">
+                      <Terminal className="size-3.5 text-amber-400" />
+                      Live Gateway & Agent Event Logs
+                    </h3>
+                    <p className="text-[11px] text-muted-foreground mt-0.5">
+                      Real-time JSON-RPC 2.0 frames, websocket status, and tool execution audit.
+                    </p>
+                  </div>
+
+                  <div className="flex items-center gap-1.5">
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={handleCopyLogs}
+                      className="h-7 px-2 text-[11px] font-mono gap-1"
+                    >
+                      {copiedLogs ? <Check className="size-3 text-emerald-400" /> : <Copy className="size-3" />}
+                      <span>{copiedLogs ? "Copied" : "Copy"}</span>
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={handleExportLogs}
+                      className="h-7 px-2 text-[11px] font-mono gap-1"
+                    >
+                      <Download className="size-3" />
+                      <span>Export</span>
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={handleClearLogs}
+                      className="h-7 px-2 text-[11px] font-mono text-muted-foreground hover:text-rose-400"
+                    >
+                      <Trash2 className="size-3" />
+                    </Button>
+                  </div>
+                </div>
+
+                {/* Filter and Search Bar */}
+                <div className="flex flex-wrap items-center justify-between gap-2 pt-1 border-t border-border/30">
+                  <div className="flex items-center gap-1">
+                    {(["all", "rpc", "tool", "info", "warn", "error"] as const).map((lvl) => (
+                      <button
+                        key={lvl}
+                        onClick={() => setLogFilter(lvl)}
+                        className={cn(
+                          "px-2 py-0.5 rounded-lg text-[10px] font-mono uppercase transition-colors",
+                          logFilter === lvl
+                            ? "bg-primary text-primary-foreground font-semibold"
+                            : "bg-muted/40 text-muted-foreground hover:text-foreground hover:bg-muted"
+                        )}
+                      >
+                        {lvl}
+                      </button>
+                    ))}
+                  </div>
+
+                  <div className="relative w-44">
+                    <Search className="size-3 text-muted-foreground absolute left-2 top-2" />
+                    <input
+                      type="text"
+                      placeholder="Filter logs..."
+                      value={logSearch}
+                      onChange={(e) => setLogSearch(e.target.value)}
+                      className="w-full pl-7 pr-2 py-1 rounded-lg bg-card/60 border border-border/40 text-[11px] font-mono focus:outline-none focus:border-primary/50 text-foreground"
+                    />
+                  </div>
+                </div>
+
+                {/* Console Log Terminal Window */}
+                <div
+                  ref={logsContainerRef}
+                  className="flex-1 min-h-[260px] max-h-[300px] overflow-y-auto rounded-xl border border-border/40 bg-black/60 p-3 font-mono text-xs space-y-1.5 shadow-inner"
+                >
+                  {filteredLogs.length === 0 ? (
+                    <div className="h-full flex items-center justify-center text-zinc-500 text-xs italic">
+                      No log entries match the selected filter.
+                    </div>
+                  ) : (
+                    filteredLogs.map((log) => {
+                      const timeStr = new Date(log.timestamp).toLocaleTimeString();
+                      return (
+                        <div key={log.id} className="flex items-start gap-2 leading-relaxed hover:bg-white/5 px-1 py-0.5 rounded">
+                          <span className="text-zinc-500 text-[10px] select-none shrink-0 pt-0.5">
+                            {timeStr}
+                          </span>
+                          <span
+                            className={cn(
+                              "text-[9px] px-1 py-0.2 rounded uppercase font-semibold shrink-0 select-none",
+                              log.level === "info" && "bg-blue-500/10 text-blue-400 border border-blue-500/20",
+                              log.level === "rpc" && "bg-cyan-500/10 text-cyan-400 border border-cyan-500/20",
+                              log.level === "tool" && "bg-amber-500/10 text-amber-400 border border-amber-500/20",
+                              log.level === "warn" && "bg-orange-500/10 text-orange-400 border border-orange-500/20",
+                              log.level === "error" && "bg-rose-500/10 text-rose-400 border border-rose-500/20"
+                            )}
+                          >
+                            {log.level}
+                          </span>
+                          <span className="text-zinc-300 break-all select-text">
+                            {log.message}
+                          </span>
+                        </div>
+                      );
+                    })
+                  )}
+                </div>
+
+                {/* Autoscroll Toggle */}
+                <div className="flex items-center justify-between text-[11px] font-mono text-muted-foreground pt-1">
+                  <span>Showing {filteredLogs.length} of {logs.length} entries</span>
+                  <label className="flex items-center gap-1.5 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={autoScroll}
+                      onChange={(e) => setAutoScroll(e.target.checked)}
+                      className="rounded border-border/50 text-primary focus:ring-0"
+                    />
+                    <span>Auto-scroll to bottom</span>
+                  </label>
+                </div>
+              </div>
+            )}
+
             {activeTab === "gateway" && (
               <div className="space-y-4">
                 <div>
@@ -339,7 +564,7 @@ export function UserSettingsPopup({
                     </div>
                     <div className="flex justify-between">
                       <span className="text-muted-foreground">External DBs:</span>
-                      <span className="text-emerald-400">0 (Zero DB / Sovereign)</span>
+                      <span className="text-emerald-400">0 (Zero DB / Sovereign SQLite FTS5)</span>
                     </div>
                     <div className="flex justify-between">
                       <span className="text-muted-foreground">Protocol:</span>
@@ -375,7 +600,7 @@ export function UserSettingsPopup({
                 <Check className="size-3.5" /> Settings Saved Successfully
               </span>
             ) : (
-              "GlyteOS Hermes by GlyteTech"
+              "GlyteOS Hermes Sovereign OS"
             )}
           </span>
 
@@ -386,7 +611,7 @@ export function UserSettingsPopup({
               onClick={() => appStoreMutate({ openUserSettings: false })}
               className="text-xs"
             >
-              Cancel
+              Close
             </Button>
             <Button
               size="sm"
