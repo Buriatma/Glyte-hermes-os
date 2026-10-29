@@ -31,8 +31,6 @@ import {
   Lock,
   Layers,
   X,
-  FolderKanban,
-  Users,
   Search,
   FileText,
   Copy,
@@ -53,6 +51,7 @@ import { GlobalSpotlightHUD } from "@/components/hermes/GlobalSpotlightHUD";
 import { MultiAgentRooms } from "@/components/hermes/MultiAgentRooms";
 import { MemoryGraphVisualizer } from "@/components/hermes/MemoryGraphVisualizer";
 import { appStore } from "@/app/store";
+import { useShallow } from "zustand/shallow";
 
 interface ChatBotProps {
   threadId: string;
@@ -87,8 +86,25 @@ export default function ChatBot({ threadId, initialMessages = [] }: ChatBotProps
   // Layout View Mode: "chat" | "split" | "terminal"
   const [viewMode, setViewMode] = useState<"chat" | "split" | "terminal">("chat");
 
-  // Right-Sidebar Panel: "none" | "workspace" | "canvas" | "kanban" | "rooms" | "memory"
-  const [rightPanel, setRightPanel] = useState<"none" | "workspace" | "canvas" | "kanban" | "rooms" | "memory">("none");
+  // Right-Sidebar Panel: synced with appStore for seamless sidebar & global controls
+  const [activeRightPanel, appStoreMutate] = appStore(
+    useShallow((state) => [state.activeRightPanel, state.mutate])
+  );
+  const [localCanvasPanel, setLocalCanvasPanel] = useState<boolean>(false);
+
+  type PanelType = "none" | "workspace" | "canvas" | "kanban" | "rooms" | "memory";
+  const rightPanel = (localCanvasPanel ? "canvas" : activeRightPanel) as PanelType;
+  const setRightPanel = (
+    panelOrUpdater: PanelType | ((prev: PanelType) => PanelType)
+  ) => {
+    const next = typeof panelOrUpdater === "function" ? panelOrUpdater(rightPanel) : panelOrUpdater;
+    if (next === "canvas") {
+      setLocalCanvasPanel(true);
+    } else {
+      setLocalCanvasPanel(false);
+      appStoreMutate({ activeRightPanel: next });
+    }
+  };
 
   // Global Spotlight HUD
   const [isSpotlightOpen, setIsSpotlightOpen] = useState(false);
@@ -678,38 +694,7 @@ export default function ChatBot({ threadId, initialMessages = [] }: ChatBotProps
             </span>
           </div>
 
-          <div className="flex items-center gap-1.5">
-            {/* Top Bar Context Window Counter */}
-            <div
-              onClick={() => appStore.getState().mutate({ openUserSettings: true, userSettingsTab: "resources" })}
-              className="hidden sm:flex items-center gap-1.5 px-2 py-1 rounded-lg bg-card/60 border border-border/40 text-[10px] font-mono cursor-pointer hover:border-primary/40 transition-colors"
-              title="Hermes Context Window Usage - Click to open Resource Manager"
-            >
-              <HardDrive className={cn("size-3", contextPercent > 80 ? "text-rose-400" : contextPercent > 50 ? "text-amber-400" : "text-cyan-400")} />
-              <span className="text-zinc-400">Context:</span>
-              <span className="text-foreground font-semibold">
-                {totalTokens >= 1000 ? `${(totalTokens / 1000).toFixed(1)}k` : totalTokens} / 128k
-              </span>
-              <div className="w-12 h-1 bg-muted rounded-full overflow-hidden ml-0.5">
-                <div
-                  className={cn("h-full rounded-full transition-all duration-300", contextPercent > 80 ? "bg-rose-500" : contextPercent > 50 ? "bg-amber-500" : "bg-cyan-500")}
-                  style={{ width: `${Math.max(3, contextPercent)}%` }}
-                />
-              </div>
-            </div>
-
-            {/* Gateway & Agent Logs */}
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => appStore.getState().mutate({ openUserSettings: true, userSettingsTab: "logs" })}
-              className="h-7 px-2 text-[11px] font-mono gap-1.5 border-border/50 text-amber-400 hover:text-amber-300 hover:border-amber-500/40 bg-amber-500/5 transition-all"
-              title="Open Gateway & Agent Live Logs"
-            >
-              <Terminal className="size-3" />
-              <span className="hidden sm:inline">Logs</span>
-            </Button>
-
+          <div className="flex items-center gap-1.5 shrink-0">
             {/* Global Spotlight (Cmd + K) */}
             <Button
               variant="outline"
@@ -723,79 +708,31 @@ export default function ChatBot({ threadId, initialMessages = [] }: ChatBotProps
               <kbd className="text-[9px] px-1 py-0.2 rounded bg-muted text-muted-foreground font-mono">⌘K</kbd>
             </Button>
 
-            {/* Kanban Task Board */}
-            <Button
-              variant={rightPanel === "kanban" ? "default" : "outline"}
-              size="sm"
-              onClick={() => setRightPanel((prev) => (prev === "kanban" ? "none" : "kanban"))}
-              className={cn(
-                "h-7 px-2 text-[11px] font-mono gap-1 transition-all",
-                rightPanel === "kanban" ? "bg-amber-600 text-white shadow-sm" : "border-border/50 text-zinc-300 hover:text-foreground"
-              )}
-              title="Toggle Hermes Kanban Task Board"
-            >
-              <FolderKanban className="size-3.5" />
-              <span className="hidden lg:inline">Kanban</span>
-            </Button>
-
-            {/* Multi-Agent Rooms */}
-            <Button
-              variant={rightPanel === "rooms" ? "default" : "outline"}
-              size="sm"
-              onClick={() => setRightPanel((prev) => (prev === "rooms" ? "none" : "rooms"))}
-              className={cn(
-                "h-7 px-2 text-[11px] font-mono gap-1 transition-all",
-                rightPanel === "rooms" ? "bg-purple-600 text-white shadow-sm" : "border-border/50 text-zinc-300 hover:text-foreground"
-              )}
-              title="Toggle Multi-Agent Collaborative Room"
-            >
-              <Users className="size-3.5" />
-              <span className="hidden lg:inline">Rooms</span>
-            </Button>
-
-            {/* Memory Graph */}
-            <Button
-              variant={rightPanel === "memory" ? "default" : "outline"}
-              size="sm"
-              onClick={() => setRightPanel((prev) => (prev === "memory" ? "none" : "memory"))}
-              className={cn(
-                "h-7 px-2 text-[11px] font-mono gap-1 transition-all",
-                rightPanel === "memory" ? "bg-indigo-600 text-white shadow-sm" : "border-border/50 text-zinc-300 hover:text-foreground"
-              )}
-              title="Toggle Associative Memory Graph"
-            >
-              <Brain className="size-3.5" />
-              <span className="hidden lg:inline">Memory</span>
-            </Button>
-
-            {/* Workspace Explorer */}
-            <Button
-              variant={rightPanel === "workspace" ? "default" : "outline"}
-              size="sm"
-              onClick={() => setRightPanel((prev) => (prev === "workspace" ? "none" : "workspace"))}
-              className={cn(
-                "h-7 px-2 text-[11px] font-mono gap-1 transition-all",
-                rightPanel === "workspace" ? "bg-primary text-primary-foreground shadow-sm" : "border-border/50 text-zinc-300 hover:text-foreground"
-              )}
-              title="Toggle Workspace Explorer on right sidebar"
-            >
-              <Layers className="size-3.5" />
-              <span className="hidden lg:inline">Workspace</span>
-            </Button>
-
-            {activeArtifact && (
+            {/* Active Right Panel Dismiss Pill */}
+            {rightPanel !== "none" && (
               <Button
-                variant={rightPanel === "canvas" ? "default" : "outline"}
+                variant="secondary"
                 size="sm"
-                onClick={() => setRightPanel((prev) => (prev === "canvas" ? "none" : "canvas"))}
-                className={cn(
-                  "h-7 px-2 text-[11px] font-mono gap-1 transition-all",
-                  rightPanel === "canvas" ? "bg-primary text-primary-foreground" : "border-primary/40 text-primary"
-                )}
+                onClick={() => setRightPanel("none")}
+                className="h-7 px-2 text-[11px] font-mono gap-1.5 bg-primary/10 text-primary border border-primary/30 hover:bg-primary/20 transition-all"
+                title={`Close ${rightPanel} panel`}
+              >
+                <span className="capitalize">{rightPanel}</span>
+                <X className="size-3" />
+              </Button>
+            )}
+
+            {/* Live Code Artifact Canvas Button */}
+            {activeArtifact && rightPanel !== "canvas" && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setRightPanel("canvas")}
+                className="h-7 px-2 text-[11px] font-mono gap-1 border-primary/40 text-primary hover:bg-primary/10 transition-all"
                 title="Toggle Live Code Artifact Canvas"
               >
                 <Code2 className="size-3.5" />
-                <span className="hidden lg:inline">Canvas</span>
+                <span className="hidden md:inline">Canvas</span>
               </Button>
             )}
 
@@ -1312,8 +1249,9 @@ export default function ChatBot({ threadId, initialMessages = [] }: ChatBotProps
       )}
 
       {/* Right Sidebar: Workspace Explorer */}
+      {/* Right Sidebar: Workspace Drawer */}
       {rightPanel === "workspace" && (
-        <div className="w-80 sm:w-96 lg:w-[460px] h-full border-l border-border/50 flex flex-col bg-[#0b0f19] shadow-2xl relative z-20">
+        <div className="w-full sm:w-[420px] lg:w-[480px] xl:w-[540px] max-w-full h-full border-l border-border/50 flex flex-col bg-[#0b0f19] shadow-2xl absolute sm:relative inset-y-0 right-0 z-30 sm:z-20 animate-in slide-in-from-right duration-200">
           <div className="px-4 py-2 border-b border-border/40 bg-card/30 flex items-center justify-between text-xs">
             <span className="font-mono text-primary font-semibold flex items-center gap-1.5">
               <Layers className="size-3.5" /> Workspace Drawer
@@ -1333,7 +1271,7 @@ export default function ChatBot({ threadId, initialMessages = [] }: ChatBotProps
 
       {/* Right Sidebar: Live Markdown Artifact Canvas */}
       {rightPanel === "canvas" && activeArtifact && (
-        <div className="w-80 sm:w-96 lg:w-[480px] h-full border-l border-border/50 flex flex-col bg-[#0b0f19] shadow-2xl relative z-20">
+        <div className="w-full sm:w-[420px] lg:w-[500px] xl:w-[580px] max-w-full h-full border-l border-border/50 flex flex-col bg-[#0b0f19] shadow-2xl absolute sm:relative inset-y-0 right-0 z-30 sm:z-20 animate-in slide-in-from-right duration-200">
           <ArtifactCanvas
             artifact={activeArtifact}
             onClose={() => setRightPanel("none")}
@@ -1344,21 +1282,21 @@ export default function ChatBot({ threadId, initialMessages = [] }: ChatBotProps
 
       {/* Right Sidebar: Hermes Kanban Task Board */}
       {rightPanel === "kanban" && (
-        <div className="w-80 sm:w-96 lg:w-[540px] xl:w-[620px] h-full border-l border-border/50 flex flex-col bg-[#0b0f19] shadow-2xl relative z-20">
+        <div className="w-full sm:w-[440px] lg:w-[540px] xl:w-[620px] max-w-full h-full border-l border-border/50 flex flex-col bg-[#0b0f19] shadow-2xl absolute sm:relative inset-y-0 right-0 z-30 sm:z-20 animate-in slide-in-from-right duration-200">
           <KanbanBoard onClose={() => setRightPanel("none")} />
         </div>
       )}
 
       {/* Right Sidebar: Multi-Agent Rooms */}
       {rightPanel === "rooms" && (
-        <div className="w-80 sm:w-96 lg:w-[480px] xl:w-[560px] h-full border-l border-border/50 flex flex-col bg-[#0b0f19] shadow-2xl relative z-20">
+        <div className="w-full sm:w-[420px] lg:w-[500px] xl:w-[580px] max-w-full h-full border-l border-border/50 flex flex-col bg-[#0b0f19] shadow-2xl absolute sm:relative inset-y-0 right-0 z-30 sm:z-20 animate-in slide-in-from-right duration-200">
           <MultiAgentRooms onClose={() => setRightPanel("none")} />
         </div>
       )}
 
       {/* Right Sidebar: Memory Graph Visualizer */}
       {rightPanel === "memory" && (
-        <div className="w-80 sm:w-96 lg:w-[520px] xl:w-[600px] h-full border-l border-border/50 flex flex-col bg-[#0b0f19] shadow-2xl relative z-20">
+        <div className="w-full sm:w-[440px] lg:w-[520px] xl:w-[600px] max-w-full h-full border-l border-border/50 flex flex-col bg-[#0b0f19] shadow-2xl absolute sm:relative inset-y-0 right-0 z-30 sm:z-20 animate-in slide-in-from-right duration-200">
           <MemoryGraphVisualizer onClose={() => setRightPanel("none")} />
         </div>
       )}

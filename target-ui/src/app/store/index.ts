@@ -49,6 +49,7 @@ export interface AppState {
   openChatPreferences: boolean;
   openUserSettings: boolean;
   userSettingsTab?: "gateway" | "security" | "resources" | "logs" | "general" | "diagnostics";
+  activeRightPanel: "none" | "workspace" | "kanban" | "rooms" | "memory";
   mcpCustomizationPopup?: MCPServerInfo & { id: string };
   temporaryChat: {
     isOpen: boolean;
@@ -85,6 +86,7 @@ const initialState: AppState = {
   allowedMcpServers: undefined,
   openUserSettings: false,
   userSettingsTab: "resources",
+  activeRightPanel: "none",
   allowedAppDefaultToolkit: [
     AppDefaultToolkit.Code,
     AppDefaultToolkit.Visualization,
