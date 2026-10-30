@@ -24,10 +24,12 @@ WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 
-# Set build-time env vars
+# NEXT_PUBLIC_* is inlined into browser code during build.
+ARG NEXT_PUBLIC_HERMES_GATEWAY_URL=ws://localhost:9119/api/ws
 ENV NEXT_TELEMETRY_DISABLED=1
 ENV NODE_ENV=production
 ENV PORT=4000
+ENV NEXT_PUBLIC_HERMES_GATEWAY_URL=${NEXT_PUBLIC_HERMES_GATEWAY_URL}
 
 RUN pnpm build
 

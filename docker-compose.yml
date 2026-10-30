@@ -5,6 +5,8 @@ services:
     build:
       context: ./target-ui
       dockerfile: Dockerfile
+      args:
+        NEXT_PUBLIC_HERMES_GATEWAY_URL: ws://141.148.193.69:9121/api/ws
     container_name: glyte-hermes-os
     restart: unless-stopped
     ports:
@@ -13,7 +15,8 @@ services:
       - NODE_ENV=production
       - PORT=4000
       - HOSTNAME=0.0.0.0
-      - HERMES_GATEWAY_URL=ws://host.docker.internal:9119
+      - HERMES_GATEWAY_URL=ws://hermes-keshav:9119/api/ws
+      - NEXT_PUBLIC_HERMES_GATEWAY_URL=ws://141.148.193.69:9121/api/ws
       - HERMES_WEBUI_PASSWORD=admin
       - HERMES_WORKSPACE_PATH=/workspace
       - HERMES_ENV_PATH=/root/.hermes/.env

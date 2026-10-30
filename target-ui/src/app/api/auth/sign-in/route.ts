@@ -13,7 +13,7 @@ export async function POST(request: Request) {
     const cookieStore = await cookies();
     cookieStore.set("hermes_auth_token", password || "operator", {
       httpOnly: true,
-      secure: process.env.NODE_ENV === "production",
+      secure: false, // ponytail: HTTP on VPS; add TLS/Cloudflare tunnel to re-enable Secure cookies
       sameSite: "lax",
       path: "/",
       maxAge: 60 * 60 * 24 * 30, // 30 days

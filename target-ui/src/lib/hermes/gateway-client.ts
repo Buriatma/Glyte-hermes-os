@@ -192,10 +192,10 @@ class GatewayClient {
       if (envUrl) return envUrl;
       const host = window.location.hostname || "localhost";
       const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
-      // Default gateway port in Hermes is 9119 or 8787
-      return `${protocol}//${host}:9119/api/ws`;
+      const port = window.location.port || "9121";
+      return `${protocol}//${host}:${port}/api/ws`;
     }
-    return process.env.HERMES_GATEWAY_URL || "ws://localhost:9119/api/ws";
+    return process.env.HERMES_GATEWAY_URL || "ws://localhost:9121/api/ws";
   }
 
   public setGatewayUrl(url: string) {
